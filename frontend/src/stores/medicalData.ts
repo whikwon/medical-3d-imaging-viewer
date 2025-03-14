@@ -5,7 +5,9 @@ import {
   getStudy, 
   getSeriesForStudy, 
   getInstancesForSeries, 
-  getOrthancImageId 
+  getOrthancImageId,
+  getInstance,
+  sortInstances
 } from '../helpers/orthancApi'
 
 export interface Patient {
@@ -116,6 +118,7 @@ export const useMedicalDataStore = defineStore('medicalData', () => {
         
         // Process each series
         for (const series_ of seriesList) {
+          const modality = series_.MainDicomTags.Modality
           const instances = await getInstancesForSeries(series_.ID)
           console.log('Instances in series:', instances.length)
           
@@ -123,13 +126,20 @@ export const useMedicalDataStore = defineStore('medicalData', () => {
           if (instances.length > 0) {
             const firstInstance = instances[0]
             
+            // Fetch detailed information for each instance to enable proper sorting
+            const instancePromises = instances.map((instance: any) => getInstance(instance.ID))
+            const instanceDetails = await Promise.all(instancePromises)
+            
+            // Sort instances using the same logic as in orthancApi.ts
+            const sortedInstances = sortInstances(instanceDetails)
+            
             // Create series object
             const series: Series = {
               id: series_.ID,
               description: firstInstance.MainDicomTags.SeriesDescription || 'No description',
-              modality: firstInstance.MainDicomTags.Modality || 'Unknown',
+              modality: modality,
               instanceCount: instances.length,
-              imageIds: instances.map((instance: any) => getOrthancImageId(instance.ID))
+              imageIds: sortedInstances.map((instance: any) => getOrthancImageId(instance.ID))
             }
 
             study.series.push(series)

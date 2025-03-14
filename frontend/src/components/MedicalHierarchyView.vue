@@ -1,15 +1,20 @@
 <template>
-  <div class="medical-hierarchy">
+  <div class="medical-hierarchy" :class="{ collapsed: isCollapsed }">
     <div v-if="store.loading" class="loading">Loading patient data...</div>
     <div v-else-if="store.error" class="error">Error: {{ store.error }}</div>
     <div v-else-if="store.patients.length === 0" class="empty-state">No patient data available</div>
     <div v-else class="hierarchy-container">
       <div class="header">
         <h2>Patient / Study / Series</h2>
-        <div class="refresh-button" @click="store.loadAllData"><span>↻</span> Refresh</div>
+        <div class="controls">
+          <div class="collapse-button" @click="toggleCollapse">
+            {{ isCollapsed ? '»' : '«' }}
+          </div>
+          <div class="refresh-button" @click="store.loadAllData"><span>↻</span> Refresh</div>
+        </div>
       </div>
 
-      <div class="hierarchy-content">
+      <div class="hierarchy-content" v-show="!isCollapsed">
         <div class="panel">
           <h3>Patients</h3>
           <ul class="list">
@@ -63,15 +68,28 @@
           </ul>
         </div>
       </div>
+
+      <div v-if="isCollapsed" class="rendered-items-summary">
+        <div v-if="renderedItems.length === 0" class="no-items">No items rendered</div>
+        <div v-else class="rendered-item" v-for="(item, index) in renderedItems" :key="index">
+          {{ item.patientName }} - {{ item.studyDesc }} - {{ item.seriesDesc }}
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useMedicalDataStore } from '../stores/medicalData'
+import { useRenderedItemsStore } from '../stores/renderedItems'
 
 const store = useMedicalDataStore()
+const renderedItemsStore = useRenderedItemsStore()
+
+const isCollapsed = ref(false)
+
+const emit = defineEmits(['toggle-collapse'])
 
 // Computed properties for displaying hierarchical data
 const currentPatientStudies = computed(() => {
@@ -82,6 +100,10 @@ const currentPatientStudies = computed(() => {
 const currentStudySeries = computed(() => {
   const study = store.currentStudy
   return study ? study.series : []
+})
+
+const renderedItems = computed(() => {
+  return renderedItemsStore.renderedItems
 })
 
 // Format DICOM date (YYYYMMDD) to a more readable format
@@ -98,6 +120,12 @@ function formatDate(dicomDate: string): string {
 
   return dicomDate
 }
+
+// Toggle the collapsed state
+function toggleCollapse() {
+  isCollapsed.value = !isCollapsed.value
+  emit('toggle-collapse', isCollapsed.value)
+}
 </script>
 
 <style scoped>
@@ -106,6 +134,11 @@ function formatDate(dicomDate: string): string {
   flex-direction: column;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  transition: width 0.3s ease;
+}
+
+.medical-hierarchy.collapsed {
+  width: 250px;
 }
 
 .loading,
@@ -141,18 +174,29 @@ function formatDate(dicomDate: string): string {
   border-bottom: 1px solid #e0e0e0;
 }
 
+.controls {
+  display: flex;
+  gap: 8px;
+}
+
 .header h2 {
   margin: 0;
   font-size: 1.2rem;
   font-weight: 500;
 }
 
-.refresh-button {
+.refresh-button,
+.collapse-button {
   cursor: pointer;
   color: #2196f3;
   display: flex;
   align-items: center;
   font-size: 0.9rem;
+}
+
+.collapse-button {
+  font-size: 1.2rem;
+  font-weight: bold;
 }
 
 .refresh-button span {
@@ -224,5 +268,24 @@ function formatDate(dicomDate: string): string {
 .item-subtitle {
   font-size: 0.85rem;
   color: #666;
+}
+
+.rendered-items-summary {
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.rendered-item {
+  padding: 8px;
+  margin-bottom: 6px;
+  background-color: #e3f2fd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.no-items {
+  color: #666;
+  text-align: center;
+  padding: 20px;
 }
 </style>

@@ -1,0 +1,15 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Best practices for medical imaging with Cornerstone.js
+globs: **/*.{ts,js}
+---
+
+- Use `@cornerstonejs/core` for core functionality
+- Implement image loading with `@cornerstonejs/dicom-image-loader`
+- Use `@cornerstonejs/nifti-volume-loader` for NIfTI volume loading
+- Implement tools and interactions with `@cornerstonejs/tools`
+- Ensure proper configuration of rendering and viewport settings

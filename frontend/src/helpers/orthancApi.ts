@@ -142,7 +142,7 @@ export async function getAvailableImageIds() {
  * Sort instances based on appropriate DICOM attributes
  * First tries ImagePositionPatient, then falls back to InstanceNumber
  */
-function sortInstances(instances: any[]): any[] {
+export function sortInstances(instances: any[]): any[] {
   // Check if all instances have valid ImagePositionPatient and ImageOrientationPatient
   const allHavePositionAndOrientation = instances.every(instance => 
     instance.MainDicomTags.ImagePositionPatient && 
@@ -161,7 +161,7 @@ function sortInstances(instances: any[]): any[] {
 /**
  * Sort instances by ImagePositionPatient along the acquisition plane normal
  */
-function sortByImagePosition(instances: any[]): any[] {
+export function sortByImagePosition(instances: any[]): any[] {
   // Get the orientation from the first instance (assuming all have same orientation)
   const firstInstance = instances[0];
   const orientation = firstInstance.MainDicomTags.ImageOrientationPatient
@@ -193,7 +193,7 @@ function sortByImagePosition(instances: any[]): any[] {
 /**
  * Sort instances by InstanceNumber
  */
-function sortByInstanceNumber(instances: any[]): any[] {
+export function sortByInstanceNumber(instances: any[]): any[] {
   return [...instances].sort((a, b) => {
     const instanceNumberA = parseInt(a.MainDicomTags.InstanceNumber || "0");
     const instanceNumberB = parseInt(b.MainDicomTags.InstanceNumber || "0");

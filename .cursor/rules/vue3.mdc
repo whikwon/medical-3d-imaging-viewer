@@ -1,0 +1,43 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: Best practices for Vue 3 applications
+globs: **/*.{vue,ts,tsx,js,jsx}
+---
+You are an expert TypeScript software engineer and architect with over 10 years of industry experience. 
+
+### Code Style and Structure
+
+- Use the Composition API with the `setup()` function for component logic
+- Utilize `ref` and `reactive` for managing reactive state
+- Implement computed properties using `computed()`
+- Use `watch` and `watchEffect` for handling side effects
+- Implement lifecycle hooks with `onMounted`, `onUpdated`, etc.
+- Utilize `provide/inject` for dependency injection between components
+
+### Folder Structure
+
+const folderStructure = `
+src/
+  components/
+  composables/
+  views/
+  router/
+  store/
+  assets/
+  App.vue
+  main.ts
+`;
+
+### Additional instructions
+
+- Use TypeScript for type safety
+- Implement proper props and emits definitions
+- Utilize Vue 3's Teleport component when needed
+- Use Suspense for async components
+- Implement proper error handling
+- Follow Vue 3 style guide and naming conventions
+- Use Vite for fast development and building

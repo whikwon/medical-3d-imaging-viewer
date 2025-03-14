@@ -1,0 +1,16 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+name: vue-router-best-practices.mdc
+description: Best practices for Vue Router 4
+globs: **/*.{ts,js}
+---
+
+- Use named routes for better maintainability
+- Implement route-level code splitting for improved performance
+- Use route meta fields for attaching additional data to routes
+- Implement navigation guards for controlling access to routes
+- Use dynamic route matching for flexible routing
