@@ -1,48 +1,203 @@
-# https://orthanc.uclouvain.be/book/users/rest-cheatsheet.html
+"""
+DICOM API routes using the OrthancClient singleton.
+This demonstrates how to use the Orthanc client throughout the application.
+"""
 
-from fastapi import APIRouter, Request, Response
-import httpx
-from starlette.background import BackgroundTask
+import logging
 
-from app.core.config import settings
+# Now convert the NumPy volume to VTI format
+from typing import Any, List, Union
+
+import numpy as np
+import vtk
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
+from pyorthanc import (
+    Instance,
+    Series,
+    Study,
+    find_instances,
+    find_patients,
+    find_studies,
+)
+from vtk.util import numpy_support
+
+from app.core.orthanc import orthanc_client
 
 router = APIRouter()
-
-# Create a single client for reuse
-client = httpx.AsyncClient(base_url=settings.ORTHANC_URL)
+logger = logging.getLogger(__name__)
 
 
-# Close client when application shuts down
-@router.api_route(
-    "/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"]
-)
-async def proxy(full_path: str, request: Request):
-    # Construct the Orthanc URL based on the incoming request path
-    url = f"/{full_path}"
+@router.get("/patients")
+async def get_patients(
+    query: dict[str, Any] = None, labels: Union[List[str], str] = None
+):
+    """Get all patients from Orthanc."""
+    return find_patients(orthanc_client.client, query, labels)
 
-    # Forward the request with its method, headers, and body.
-    response = await client.request(
-        method=request.method,
-        url=url,
-        headers=request.headers,
-        params=request.query_params,
-        content=await request.body(),
+
+@router.get("/studies")
+async def get_studies(
+    query: dict[str, Any] = None, labels: Union[List[str], str] = None
+):
+    """Get all studies from Orthanc."""
+    studies = find_studies(orthanc_client.client, query, labels)
+    return [study.get_main_information() for study in studies]
+
+
+@router.get("/instances")
+async def get_instances(
+    query: dict[str, Any] = None, labels: Union[List[str], str] = None
+):
+    """Get all instances from Orthanc."""
+    instances = find_instances(orthanc_client.client, query, labels)
+    dicoms = []
+    for ins in instances:
+        dicoms.append(ins.get_pydicom())
+    return dicoms
+
+
+@router.get("/instance/{instance_id}/file")
+async def get_instance_file(instance_id: str):
+    """Get DICOM file for a specific instance using pyorthanc Instance class."""
+    try:
+        # Pass the underlying client, not the wrapper
+        instance = Instance(instance_id, orthanc_client.client)
+        dicom_data = instance.get_dicom_file_content()
+
+        # Instead of using StreamingResponse directly with the bytes data,
+        # we'll use Response with the bytes directly
+        return Response(
+            content=dicom_data,
+            media_type="application/dicom",
+            headers={"Content-Disposition": f"attachment; filename={instance_id}.dcm"},
+        )
+    except Exception as e:
+        logger.error(f"Failed to retrieve file for instance {instance_id}: {e}")
+        raise HTTPException(
+            status_code=404, detail=f"Instance file not found: {str(e)}"
+        )
+
+
+@router.get("/series/{series_id}/volume")
+async def get_series_volume(series_id: str):
+    """Get 3D volume data from a series for VTK.js visualization using in-memory processing and returning VTI format."""
+    # Get all instances in this series
+    series = Series(series_id, orthanc_client.client)
+    instances = series.instances
+
+    if not instances:
+        raise HTTPException(
+            status_code=404, detail=f"No instances found in series {series_id}"
+        )
+
+    # First get all DICOM datasets and extract position info for sorting
+    dicom_datasets = []
+    position_info = []
+
+    for instance in instances:
+        # Get DICOM data directly as bytes
+        dataset = instance.get_pydicom()
+        dicom_datasets.append(dataset)
+
+        # Extract position for sorting
+        try:
+            if hasattr(dataset, "SliceLocation"):
+                position = float(dataset.SliceLocation)
+            elif hasattr(dataset, "ImagePositionPatient"):
+                position = float(dataset.ImagePositionPatient[2])
+            else:
+                position = 0.0
+        except Exception:
+            position = 0.0
+
+        position_info.append((position, len(dicom_datasets) - 1))
+
+    # Sort datasets by position
+    position_info.sort(key=lambda x: x[0])
+    sorted_indices = [x[1] for x in position_info]
+    sorted_datasets = [dicom_datasets[i] for i in sorted_indices]
+
+    # Get volume dimensions and properties from the first dataset
+    first_dataset = sorted_datasets[0]
+    slice_shape = first_dataset.pixel_array.shape
+    num_slices = len(sorted_datasets)
+
+    # Extract or calculate spacing
+    spacing = [
+        float(getattr(first_dataset, "PixelSpacing", [1.0, 1.0])[0]),
+        float(getattr(first_dataset, "PixelSpacing", [1.0, 1.0])[1]),
+        float(getattr(first_dataset, "SliceThickness", 1.0)),
+    ]
+
+    # Extract or calculate origin
+    if hasattr(first_dataset, "ImagePositionPatient"):
+        origin = [float(x) for x in first_dataset.ImagePositionPatient]
+    else:
+        origin = [0.0, 0.0, 0.0]
+
+    # Create 3D volume array
+    dtype = sorted_datasets[0].pixel_array.dtype
+    volume = np.zeros((num_slices, *slice_shape), dtype=dtype)
+
+    # Fill the volume with pixel data
+    for i, dataset in enumerate(sorted_datasets):
+        pixel_array = dataset.pixel_array
+        volume[i] = pixel_array
+
+    # Create VTK image data
+    vtk_image = vtk.vtkImageData()
+    vtk_image.SetDimensions(slice_shape[1], slice_shape[0], num_slices)
+    vtk_image.SetSpacing(spacing)
+    vtk_image.SetOrigin(origin)
+
+    # Ensure data type compatibility with VTK
+    if volume.dtype != np.uint16 and volume.dtype != np.int16:
+        # Convert to uint16 for consistency
+        volume_flat = volume.astype(np.uint16).flatten()
+    else:
+        volume_flat = volume.flatten()
+
+    # Convert numpy array to VTK array
+    vtk_array = numpy_support.numpy_to_vtk(
+        volume_flat, deep=True, array_type=vtk.VTK_UNSIGNED_SHORT
     )
 
-    # For binary responses (like DICOM files), stream the response directly
-    # instead of buffering in memory
-    is_binary = "application/dicom" in response.headers.get("Content-Type", "")
+    # Set the VTK array as the image data's point data
+    vtk_image.GetPointData().SetScalars(vtk_array)
 
-    headers = dict(response.headers)
+    # Write the VTI file to memory
+    writer = vtk.vtkXMLImageDataWriter()
+    writer.SetInputData(vtk_image)
+    writer.SetDataModeToBinary()
+    writer.SetCompressorTypeToZLib()
 
-    # Add cache control headers for DICOM files to improve performance
-    if is_binary or "/file" in full_path:
-        headers["Cache-Control"] = "public, max-age=86400"  # Cache for 24 hours
+    # Write to memory instead of disk
+    writer.WriteToOutputStringOn()
+    writer.Update()
 
-    # Return the response from Orthanc back to the client
-    return Response(
-        content=response.content,
-        status_code=response.status_code,
-        headers=headers,
-        background=BackgroundTask(response.aclose),
-    )
+    # Get the VTI data as string and encode it
+    vti_data = writer.GetOutputString()
+
+    # Convert to bytes if it's a string (needed for base64 encoding)
+    if isinstance(vti_data, str):
+        vti_data = vti_data.encode("utf-8")
+
+    # Return the VTI data with metadata
+    return Response(content=vti_data, media_type="application/octet-stream")
+
+
+@router.get("/studies/{study_id}/series")
+async def get_study_series(study_id: str):
+    """Get all series for a specific study from Orthanc."""
+    try:
+        study = Study(study_id, orthanc_client.client)
+        series_list = [series.get_main_information() for series in study.series]
+
+        return series_list
+    except Exception as e:
+        logger.error(f"Failed to get series for study {study_id}: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Study not found or error retrieving series: {str(e)}",
+        )
