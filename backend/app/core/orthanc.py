@@ -3,8 +3,8 @@ Singleton Orthanc client for interacting with Orthanc DICOM server.
 This module provides a centralized client that can be used throughout the backend.
 """
 
-from typing import Optional
 import logging
+from typing import Optional
 
 import httpx
 from pyorthanc import Orthanc

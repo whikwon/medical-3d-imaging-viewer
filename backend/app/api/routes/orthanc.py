@@ -79,9 +79,12 @@ async def get_instance_file(instance_id: str):
         )
 
 
-@router.get("/series/{series_id}/volume")
-async def get_series_volume(series_id: str):
-    """Get 3D volume data from a series for VTK.js visualization using in-memory processing and returning VTI format."""
+# Replace the separate volume and multiframe endpoints with a single unified endpoint
+@router.get("/series/{series_id}/data")
+async def get_series_data(series_id: str):
+    """Get 3D volume or multiframe data from a series for VTK.js visualization.
+    Automatically determines whether to process as standard volumetric data or multiframe data.
+    """
     # Get all instances in this series
     series = Series(series_id, orthanc_client.client)
     instances = series.instances
@@ -90,6 +93,30 @@ async def get_series_volume(series_id: str):
         raise HTTPException(
             status_code=404, detail=f"No instances found in series {series_id}"
         )
+
+    # Check if this is a multi-frame series
+    first_instance = instances[0].get_pydicom()
+
+    # Determine if this is a multiframe series (either by modality or by checking NumberOfFrames)
+    is_multiframe = False
+    if hasattr(first_instance, "Modality") and first_instance.Modality == "XA":
+        is_multiframe = True
+    elif (
+        hasattr(first_instance, "NumberOfFrames")
+        and int(first_instance.NumberOfFrames) > 1
+    ):
+        is_multiframe = True
+
+    if is_multiframe:
+        return await _process_multiframe_data(instances)
+    else:
+        return await _process_volume_data(instances)
+
+
+async def _process_volume_data(instances):
+    """Process volumetric data (CT, MR, etc.)"""
+    if not instances:
+        raise HTTPException(status_code=404, detail="No instances found")
 
     # First get all DICOM datasets and extract position info for sorting
     dicom_datasets = []
@@ -157,6 +184,92 @@ async def get_series_volume(series_id: str):
         volume_flat = volume.astype(np.uint16).flatten()
     else:
         volume_flat = volume.flatten()
+
+    # Convert numpy array to VTK array
+    vtk_array = numpy_support.numpy_to_vtk(
+        volume_flat, deep=True, array_type=vtk.VTK_UNSIGNED_SHORT
+    )
+
+    # Set the VTK array as the image data's point data
+    vtk_image.GetPointData().SetScalars(vtk_array)
+
+    # Write the VTI file to memory
+    writer = vtk.vtkXMLImageDataWriter()
+    writer.SetInputData(vtk_image)
+    writer.SetDataModeToBinary()
+    writer.SetCompressorTypeToZLib()
+
+    # Write to memory instead of disk
+    writer.WriteToOutputStringOn()
+    writer.Update()
+
+    # Get the VTI data as string and encode it
+    vti_data = writer.GetOutputString()
+
+    # Convert to bytes if it's a string (needed for base64 encoding)
+    if isinstance(vti_data, str):
+        vti_data = vti_data.encode("utf-8")
+
+    # Return the VTI data with metadata
+    return Response(content=vti_data, media_type="application/octet-stream")
+
+
+async def _process_multiframe_data(instances):
+    """Process multiframe data (XA, US, etc.)"""
+    if not instances or len(instances) == 0:
+        raise HTTPException(status_code=404, detail="No instances found")
+
+    # For XA, we typically have one instance with multiple frames
+    # Let's get the first instance that has multiple frames
+    multiframe_instance = None
+    for instance in instances:
+        dataset = instance.get_pydicom()
+        if hasattr(dataset, "NumberOfFrames") and int(dataset.NumberOfFrames) > 1:
+            multiframe_instance = dataset
+            break
+
+    if not multiframe_instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No multi-frame instance found in series",
+        )
+
+    # Get the number of frames
+    num_frames = int(multiframe_instance.NumberOfFrames)
+
+    # Get the dimensions of each frame
+    frame_shape = multiframe_instance.pixel_array.shape[
+        1:
+    ]  # Remove the first dimension (frames)
+
+    # Extract or calculate spacing
+    spacing = [
+        float(getattr(multiframe_instance, "PixelSpacing", [1.0, 1.0])[0]),
+        float(getattr(multiframe_instance, "PixelSpacing", [1.0, 1.0])[1]),
+        1.0,  # Z spacing for frames is typically 1.0
+    ]
+
+    # Extract or calculate origin
+    if hasattr(multiframe_instance, "ImagePositionPatient"):
+        origin = [float(x) for x in multiframe_instance.ImagePositionPatient]
+    else:
+        origin = [0.0, 0.0, 0.0]
+
+    # Create a 3D volume from the frames
+    volume = multiframe_instance.pixel_array
+
+    # Create VTK image data
+    vtk_image = vtk.vtkImageData()
+    vtk_image.SetDimensions(frame_shape[1], frame_shape[0], num_frames)
+    vtk_image.SetSpacing(spacing)
+    vtk_image.SetOrigin(origin)
+
+    # Ensure data type compatibility with VTK
+    if volume.dtype != np.uint16 and volume.dtype != np.int16:
+        # Convert to uint16 for consistency
+        volume_flat = volume.reshape(-1).astype(np.uint16)
+    else:
+        volume_flat = volume.reshape(-1)
 
     # Convert numpy array to VTK array
     vtk_array = numpy_support.numpy_to_vtk(
