@@ -219,7 +219,7 @@ import '@kitware/vtk.js/Rendering/Profiles/Volume'
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import vtkConeSource from '@kitware/vtk.js/Filters/Sources/ConeSource'
+import vtkSphereSource from '@kitware/vtk.js/Filters/Sources/SphereSource'
 import vtkXMLImageDataReader from '@kitware/vtk.js/IO/XML/XMLImageDataReader'
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor'
 import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker'
@@ -351,129 +351,6 @@ onMounted(async () => {
     interactor.initialize()
     interactor.bindEvents(vtkContainer.value)
 
-    // const coneSource = vtkConeSource.newInstance({
-    //   height: 1000.0,
-    //   radius: 500.0,
-    //   resolution: 12,
-    // })
-
-    // const mapper = vtkMapper.newInstance()
-    // mapper.setInputConnection(coneSource.getOutputPort())
-
-    // const actor = vtkActor.newInstance()
-    // actor.setMapper(mapper)
-    // // Set a bright red color for the sphere
-    // actor.getProperty().setColor(1.0, 0.0, 0.0)
-    // actor.setPosition(0, 0, 0)
-
-    // const picker = vtkCellPicker.newInstance()
-    // picker.setPickFromList(1)
-    // picker.setTolerance(0)
-    // picker.initializePickList()
-    // picker.addPickList(actor)
-
-    // renderer.addActor(actor)
-    // renderer.resetCamera()
-    // renderWindow.render()
-
-    // // Variables to handle dragging
-    // let lastPosition = null
-
-    // const coordinate = vtkCoordinate.newInstance()
-    // coordinate.setCoordinateSystemToDisplay()
-
-    // // Record intersection point on left click using cell picker
-    // interactor.onLeftButtonPress((event) => {
-    //   const displayPosition = [event.position.x, event.position.y, 0]
-    //   picker.pick(displayPosition, renderer)
-    //   if (picker.getActors().length > 0) {
-    //     lastPosition = picker.getPickPosition()
-    //     console.log('Updated lastPosition', lastPosition)
-    //   }
-    // })
-
-    // // Handle dragging with right click using coordinate system
-    // interactor.onRightButtonPress((event) => {
-    //   if (!lastPosition) return
-
-    //   // 현재 카메라의 투영 방향을 평면의 법선으로 사용 (카메라 평면)
-    //   const camera = renderer.getActiveCamera()
-    //   const planeNormal = camera.getDirectionOfProjection() // 예: [nx, ny, nz]
-    //   const planePoint = lastPosition // 평면이 지나가는 기준점
-    //   console.log('planeNormal', planeNormal)
-    //   console.log('planePoint', planePoint)
-
-    //   // 마우스의 display coordinate를 이용해 ray의 near와 far world 좌표 계산
-    //   // display 좌표에서 z=0은 near, z=1은 far를 의미 (렌더러 내부 매핑 사용)
-    //   const nearDisplay = [event.position.x, event.position.y, 0.0]
-    //   coordinate.setValue(nearDisplay)
-    //   const worldNear = coordinate.getComputedWorldValue(renderer)
-    //   console.log('worldNear', worldNear)
-
-    //   const farDisplay = [event.position.x, event.position.y, 1.0]
-    //   coordinate.setValue(farDisplay)
-    //   const worldFar = coordinate.getComputedWorldValue(renderer)
-    //   console.log('worldFar', worldFar)
-
-    //   // ray 방향 계산 (정규화)
-    //   const rayDirection = [
-    //     worldFar[0] - worldNear[0],
-    //     worldFar[1] - worldNear[1],
-    //     worldFar[2] - worldNear[2],
-    //   ]
-    //   const len = Math.sqrt(
-    //     rayDirection[0] * rayDirection[0] +
-    //       rayDirection[1] * rayDirection[1] +
-    //       rayDirection[2] * rayDirection[2],
-    //   )
-    //   rayDirection[0] /= len
-    //   rayDirection[1] /= len
-    //   rayDirection[2] /= len
-
-    //   // ray와 평면의 교차점 계산
-    //   // 평면 방정식: (P - planePoint) dot planeNormal = 0
-    //   // ray 방정식: P = worldNear + t * rayDirection
-    //   // t = ((planePoint - worldNear) dot planeNormal) / (rayDirection dot planeNormal)
-    //   const num =
-    //     (planePoint[0] - worldNear[0]) * planeNormal[0] +
-    //     (planePoint[1] - worldNear[1]) * planeNormal[1] +
-    //     (planePoint[2] - worldNear[2]) * planeNormal[2]
-    //   const denom =
-    //     rayDirection[0] * planeNormal[0] +
-    //     rayDirection[1] * planeNormal[1] +
-    //     rayDirection[2] * planeNormal[2]
-    //   if (denom === 0) {
-    //     console.log('Ray is parallel to the plane')
-    //     return
-    //   }
-    //   const t = num / denom
-    //   const currentPosition = [
-    //     worldNear[0] + t * rayDirection[0],
-    //     worldNear[1] + t * rayDirection[1],
-    //     worldNear[2] + t * rayDirection[2],
-    //   ]
-
-    //   // translation vector 계산 (이전 피킹 위치와 현재 계산된 교차점의 차이)
-    //   const translation = [
-    //     currentPosition[0] - lastPosition[0],
-    //     currentPosition[1] - lastPosition[1],
-    //     currentPosition[2] - lastPosition[2],
-    //   ]
-
-    //   // actor의 현재 위치에 translation vector 반영
-    //   const currentActorPos = actor.getPosition()
-    //   actor.setPosition(
-    //     currentActorPos[0] + translation[0],
-    //     currentActorPos[1] + translation[1],
-    //     currentActorPos[2] + translation[2],
-    //   )
-
-    //   // 이후 추가 이동을 위해 기준점을 현재 교차점으로 업데이트
-    //   lastPosition = currentPosition
-
-    //   renderWindow.render()
-    // })
-
     // Load studies when component is mounted
     loadStudies()
   }
@@ -597,19 +474,42 @@ function setupConeInteraction() {
   if (!renderer || !renderWindow || !interactor) return
 
   // Create cone source
-  const coneSource = vtkConeSource.newInstance({
-    height: 50.0,
-    radius: 25.0,
-    resolution: 12,
+  const sphereSource = vtkSphereSource.newInstance({
+    radius: 10.0,
+    thetaResolution: 12,
+    phiResolution: 12,
   })
 
   const mapper = vtkMapper.newInstance()
-  mapper.setInputConnection(coneSource.getOutputPort())
+  mapper.setInputConnection(sphereSource.getOutputPort())
 
   const actor = vtkActor.newInstance()
   actor.setMapper(mapper)
   actor.getProperty().setColor(1.0, 0.0, 0.0)
-  actor.setPosition(0, 0, 0)
+
+  // Position the sphere based on visualization type
+  const currentVis = activeVolume.value || activeMultiframe.value
+  if (currentVis && currentVis.data) {
+    const extent = currentVis.data.getExtent()
+    const spacing = currentVis.data.getSpacing()
+    const origin = currentVis.data.getOrigin()
+
+    if (currentVis.type === 'multiframe') {
+      // For multiframe, position at bottom-left of first frame
+      // Convert extent indices to world coordinates
+      const x = origin[0] + extent[0] * spacing[0]
+      const y = origin[1] + extent[2] * spacing[1]
+      const z = origin[2] + extent[4] * spacing[2]
+      actor.setPosition(x, y, z)
+    } else {
+      // For CT volume, position at bottom-left of last slice
+      // Convert extent indices to world coordinates
+      const x = origin[0] + extent[0] * spacing[0]
+      const y = origin[1] + extent[2] * spacing[1]
+      const z = origin[2] + extent[5] * spacing[2]
+      actor.setPosition(x, y, z)
+    }
+  }
 
   // Create picker
   const picker = vtkCellPicker.newInstance()
@@ -634,7 +534,8 @@ function setupConeInteraction() {
     const displayPosition = [event.position.x, event.position.y, 0]
     picker.pick(displayPosition, renderer)
     if (picker.getActors().length > 0) {
-      lastPosition.value = picker.getPickPosition()
+      const pickedPositions = picker.getPickedPositions()
+      lastPosition.value = pickedPositions[0]
     }
   })
 
@@ -702,12 +603,12 @@ function setupConeInteraction() {
       })
     }
 
-    // Move the cone along with the images
-    const currentConePos = actor.getPosition()
+    // Move the sphere along with the images
+    const currentSpherePos = actor.getPosition()
     actor.setPosition(
-      currentConePos[0] + translation[0],
-      currentConePos[1] + translation[1],
-      currentConePos[2] + translation[2],
+      currentSpherePos[0] + translation[0],
+      currentSpherePos[1] + translation[1],
+      currentSpherePos[2] + translation[2],
     )
 
     lastPosition.value = currentPosition
