@@ -24,7 +24,7 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
 
     // Create sphere source
     const sphereSource = vtkSphereSource.newInstance({
-      radius: 10.0,
+      radius: 10,
       thetaResolution: 12,
       phiResolution: 12,
     })
@@ -181,4 +181,4 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
     setupInteraction,
     cleanupInteraction,
   }
-} 
+}

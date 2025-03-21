@@ -1,6 +1,7 @@
 import type { VtkObject } from '@/types/visualization'
 import vtkOrientationMarkerWidget from '@kitware/vtk.js/Interaction/Widgets/OrientationMarkerWidget'
 import vtkAnnotatedCubeActor from '@kitware/vtk.js/Rendering/Core/AnnotatedCubeActor'
+import vtkAxesActor from '@kitware/vtk.js/Rendering/Core/AxesActor'
 import vtkRenderWindowInteractor from '@kitware/vtk.js/Rendering/Core/RenderWindowInteractor'
 import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow'
 
@@ -9,6 +10,13 @@ export interface VTKViewerInstance {
   renderer: VtkObject
   fullScreenRenderer: VtkObject
   interactor: VtkObject
+}
+
+interface AxesConfig {
+  recenter: boolean
+  tipLength: number
+  tipRadius: number
+  shaftRadius: number
 }
 
 /**
@@ -28,8 +36,8 @@ export function initializeViewer(container: HTMLElement): VTKViewerInstance {
   const renderer = fullScreenRenderer.getRenderer()
 
   // Set camera to parallel projection
-  const camera = renderer.getActiveCamera()
-  camera.setParallelProjection(true)
+  // const camera = renderer.getActiveCamera()
+  // camera.setParallelProjection(true)
 
   // Create interactor for mouse/touch events
   const interactor = vtkRenderWindowInteractor.newInstance()
@@ -39,6 +47,7 @@ export function initializeViewer(container: HTMLElement): VTKViewerInstance {
 
   // Create axes and orientation widget
   setupOrientationWidget(interactor)
+  setupAxesActor(renderer)
 
   // Return all the created objects
   return {
@@ -47,6 +56,23 @@ export function initializeViewer(container: HTMLElement): VTKViewerInstance {
     fullScreenRenderer,
     interactor,
   }
+}
+
+/**
+ * Sets up the axes actor
+ * @param renderer - VTK renderer to render the axes in
+ */
+function setupAxesActor(renderer: VtkObject): void {
+  const axesActor = vtkAxesActor.newInstance()
+  const config = axesActor.getConfig() as AxesConfig
+  config.recenter = false
+  axesActor.setConfig(config)
+  axesActor.setScale(40, 40, 40)
+  axesActor.setXAxisColor([255, 0, 0])
+  axesActor.setYAxisColor([0, 255, 0])
+  axesActor.setZAxisColor([0, 0, 255])
+  axesActor.update()
+  renderer.addActor(axesActor)
 }
 
 /**

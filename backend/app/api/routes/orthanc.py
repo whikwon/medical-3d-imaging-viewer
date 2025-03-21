@@ -20,8 +20,10 @@ from pyorthanc import (
     find_patients,
     find_studies,
 )
-from vtk.util import numpy_support
+from vtkmodules.util import numpy_support
 
+from app.core.carm import CArm
+from app.core.dicom import BaseDicomHandler
 from app.core.orthanc import orthanc_client
 
 router = APIRouter()
@@ -221,55 +223,67 @@ async def _process_multiframe_data(instances):
 
     # For XA, we typically have one instance with multiple frames
     # Let's get the first instance that has multiple frames
-    multiframe_instance = None
+    dcm_handler = None
     for instance in instances:
-        dataset = instance.get_pydicom()
-        if hasattr(dataset, "NumberOfFrames") and int(dataset.NumberOfFrames) > 1:
-            multiframe_instance = dataset
+        dcm_handler = BaseDicomHandler(instance.get_pydicom())
+        if dcm_handler.number_of_frames > 1:
+            dcm_handler = dcm_handler
             break
 
-    if not multiframe_instance:
+    if not dcm_handler:
         raise HTTPException(
             status_code=404,
             detail="No multi-frame instance found in series",
         )
 
     # Get the number of frames
-    num_frames = int(multiframe_instance.NumberOfFrames)
+    num_frames = dcm_handler.number_of_frames
 
     # Get the dimensions of each frame
-    frame_shape = multiframe_instance.pixel_array.shape[
-        1:
-    ]  # Remove the first dimension (frames)
+    frame_shape = [dcm_handler.rows, dcm_handler.columns]
 
     # Extract or calculate spacing
-    spacing = [
-        float(getattr(multiframe_instance, "PixelSpacing", [1.0, 1.0])[0]),
-        float(getattr(multiframe_instance, "PixelSpacing", [1.0, 1.0])[1]),
-        1.0,  # Z spacing for frames is typically 1.0
-    ]
+    imager_pixel_spacing = dcm_handler.imager_pixel_spacing
+    spacing = [imager_pixel_spacing[0], imager_pixel_spacing[1], 1.0]
 
-    # Extract or calculate origin
-    if hasattr(multiframe_instance, "ImagePositionPatient"):
-        origin = [float(x) for x in multiframe_instance.ImagePositionPatient]
-    else:
-        origin = [0.0, 0.0, 0.0]
+    # Isocenter
+    carm = CArm(
+        alpha=dcm_handler.positioner_primary_angle,
+        beta=dcm_handler.positioner_secondary_angle,
+        sid=dcm_handler.distance_source_to_detector,
+        sod=dcm_handler.distance_source_to_patient,
+        imager_pixel_spacing=spacing,
+        rows=dcm_handler.rows,
+        columns=dcm_handler.columns,
+        table_top_position=dcm_handler.table_top_position,
+    )
+    detector_position = carm.detector_center_pt_3d
 
     # Create a 3D volume from the frames
-    volume = multiframe_instance.pixel_array
+    frames = dcm_handler.pixel_array
 
     # Create VTK image data
     vtk_image = vtk.vtkImageData()
     vtk_image.SetDimensions(frame_shape[1], frame_shape[0], num_frames)
     vtk_image.SetSpacing(spacing)
-    vtk_image.SetOrigin(origin)
+    vtk_image.SetOrigin(detector_position)
+
+    # Create vtkMatrix3x3 and populate it with rotation matrix values
+    direction_matrix = vtk.vtkMatrix3x3()
+    rotation_matrix = carm.rotation.as_matrix()
+    for i in range(3):
+        for j in range(3):
+            direction_matrix.SetElement(i, j, rotation_matrix[i][j])
+
+    # Set the direction matrix using the vtkMatrix3x3 object
+    vtk_image.SetDirectionMatrix(direction_matrix)
 
     # Ensure data type compatibility with VTK
-    if volume.dtype != np.uint16 and volume.dtype != np.int16:
+    if frames.dtype != np.uint16 and frames.dtype != np.int16:
         # Convert to uint16 for consistency
-        volume_flat = volume.reshape(-1).astype(np.uint16)
+        volume_flat = frames.reshape(-1).astype(np.uint16)
     else:
-        volume_flat = volume.reshape(-1)
+        volume_flat = frames.reshape(-1)
 
     # Convert numpy array to VTK array
     vtk_array = numpy_support.numpy_to_vtk(
