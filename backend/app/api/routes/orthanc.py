@@ -123,26 +123,27 @@ async def _process_volume_data(instances):
 
     # Get volume dimensions and shape
     volume = ct_handler.voxel_array
-    slice_shape = volume.shape[:2]
-    num_slices = volume.shape[2]
+    dimensions = [
+        ct_handler.columns,
+        ct_handler.rows,
+        ct_handler.number_of_slices,
+    ]
 
     # Get spacing from the handler
     spacing = ct_handler.spacing
 
     # Get image orientation and create direction matrix
-    image_orientation = ct_handler.image_orientation_patient
-    basis_vector_x = np.array(image_orientation[:3])
-    basis_vector_y = np.array(image_orientation[3:6])
-    basis_vector_z = np.cross(basis_vector_x, basis_vector_y)
-    rotation_matrix = np.array([basis_vector_x, basis_vector_y, basis_vector_z])
+    rotation_matrix = ct_handler.image_direction_matrix
     direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix.T)
 
     # Get origin (position of first slice)
+    ct_center_position = ct_handler.volume_center_position_mm
     origin = ct_handler.get_image_position_patient(0)
+    origin -= ct_center_position
 
     # Create VTK image data
     vtk_image = vtk.vtkImageData()
-    vtk_image.SetDimensions(slice_shape[1], slice_shape[0], num_slices)
+    vtk_image.SetDimensions(dimensions)
     vtk_image.SetSpacing(spacing)
     vtk_image.SetOrigin(origin)
     vtk_image.SetDirectionMatrix(direction_matrix)
@@ -150,9 +151,9 @@ async def _process_volume_data(instances):
     # Ensure data type compatibility with VTK
     if volume.dtype != np.uint16 and volume.dtype != np.int16:
         # Convert to uint16 for consistency
-        volume_flat = volume.astype(np.uint16).reshape(-1)
+        volume_flat = volume.astype(np.uint16).flatten()
     else:
-        volume_flat = volume.reshape(-1)
+        volume_flat = volume.flatten()
 
     # Convert numpy array to VTK array
     vtk_array = numpy_support.numpy_to_vtk(
@@ -228,8 +229,6 @@ async def _process_multiframe_data(instances):
     carm = CArmLPSAdapter(carm)
     origin = carm.image_origin
     rotation_matrix = carm.rotation
-    # direction matrix 값이 같은데 vtk.js로 가면 반대로 나옴
-    rotation_matrix = rotation_matrix.T
 
     # Create a 3D volume from the frames
     frames = dcm_handler.pixel_array
@@ -241,6 +240,7 @@ async def _process_multiframe_data(instances):
     vtk_image.SetOrigin(origin)
 
     # Create vtkMatrix3x3 and populate it with rotation matrix values
+    # direction matrix 값이 같은데 vtk.js로 가면 반대로 나와서 transpose 적용
     direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix.T)
 
     # Set the direction matrix using the vtkMatrix3x3 object

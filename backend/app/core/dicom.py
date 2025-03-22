@@ -463,9 +463,6 @@ class BaseDicomHandler:
 
         The x, y, and z coordinates of the upper left hand corner (center of the first voxel transmitted) of the image, in mm.
 
-        If Anatomical Orientation Type (0010,2210) is absent or has a value of BIPED, the x-axis is increasing to the left hand side of the patient.
-        The y-axis is increasing to the posterior side of the patient. The z-axis is increasing toward the head of the patient.
-
         Notes
         -----
         TableHeight can be a reference point. (Siemens SOMATOM Force)
@@ -485,10 +482,6 @@ class BaseDicomHandler:
     def spacing_between_slices(self):
         """
         float, list[float] or list[int]: Decimal String
-
-        References
-        ----------
-        .. [1] https://stackoverflow.com/questions/14930222/how-to-calculate-space-between-dicom-slices-for-mpr
         """
         return read_dicom_element_value(self.dcm, "SpacingBetweenSlices", float)
 
@@ -504,6 +497,9 @@ class BaseDicomHandler:
         """list[float]: Decimal String
 
         Image Orientation (Patient) (0020,0037) specifies the direction cosines of the first row and the first column with respect to the patient.
+
+        If Anatomical Orientation Type (0010,2210) is absent or has a value of BIPED, the x-axis is increasing to the left hand side of the patient.
+        The y-axis is increasing to the posterior side of the patient. The z-axis is increasing toward the head of the patient.
 
         References
         ----------
@@ -521,22 +517,6 @@ class BaseDicomHandler:
         """str: Code String"""
         return read_dicom_element_value(self.dcm, "PatientPosition")
 
-    @property
-    def spacing(self):
-        """
-        np.ndarray
-        """
-        pixel_spacing = self.pixel_spacing
-        if not isinstance(pixel_spacing, list):
-            pixel_spacing = [pixel_spacing, pixel_spacing]
-        if self.spacing_between_slices is not None:
-            spacing_between_slices = self.spacing_between_slices
-        elif self.slice_thickness is not None:
-            spacing_between_slices = self.slice_thickness
-        else:
-            raise ValueError("Spacing between slices is not defined")
-        return pixel_spacing + [spacing_between_slices]
-
 
 class VolumeDicomHandler:
     def __init__(self, dir_path_or_dcms: Path | str | list[FileDataset]):
@@ -553,6 +533,9 @@ class VolumeDicomHandler:
         self.ref_dcm = self.dcm_series[0]
         self.identity_map = {}
 
+    def sanity_check(self):
+        raise NotImplementedError("Sanity check is not implemented yet")
+
     @property
     def columns(self):
         return self.ref_dcm.columns
@@ -562,8 +545,8 @@ class VolumeDicomHandler:
         return self.ref_dcm.rows
 
     @property
-    def spacing(self):
-        return self.ref_dcm.spacing
+    def pixel_spacing(self):
+        return self.ref_dcm.pixel_spacing
 
     @property
     def spacing_between_slices(self):
@@ -574,8 +557,50 @@ class VolumeDicomHandler:
         return self.ref_dcm.slice_thickness
 
     @property
+    def window_center(self):
+        return self.ref_dcm.window_center
+
+    @property
+    def window_width(self):
+        return self.ref_dcm.window_width
+
+    @property
     def image_orientation_patient(self):
         return self.ref_dcm.image_orientation_patient
+
+    @property
+    def image_direction_matrix(self):
+        image_orientation = self.image_orientation_patient
+        v_x = np.array(image_orientation[:3])
+        v_y = np.array(image_orientation[3:6])
+        v_z = np.cross(v_x, v_y)
+        rotation_matrix = np.array([v_x, v_y, v_z])
+        return rotation_matrix
+
+    @property
+    def spacing(self):
+        """
+        Returns:
+            list[float]: [x, y, z] spacing in mm
+
+        References
+        ----------
+        .. [1] https://stackoverflow.com/questions/14930222/how-to-calculate-space-between-dicom-slices-for-mpr
+        """
+        if not isinstance(self.pixel_spacing, list):
+            pixel_spacing = [self.pixel_spacing, self.pixel_spacing]
+        else:
+            pixel_spacing = self.pixel_spacing[::-1]
+        if self.spacing_between_slices is not None:
+            spacing_between_slices = self.spacing_between_slices
+        else:
+            first_slice = self.dcm_series[0]
+            second_slice = self.dcm_series[1]
+            spacing_between_slices = (
+                second_slice.image_position_patient[2]
+                - first_slice.image_position_patient[2]
+            )
+        return pixel_spacing + [spacing_between_slices]
 
     def load_dicom_series(self):
         """
@@ -603,9 +628,7 @@ class VolumeDicomHandler:
         position_info = []
 
         for i, dataset in enumerate(dicom_datasets):
-            if dataset.slice_location is not None:
-                position = dataset.slice_location
-            elif dataset.image_position_patient is not None:
+            if dataset.image_position_patient is not None:
                 position = dataset.image_position_patient[2]
             else:
                 position = i
@@ -636,7 +659,7 @@ class VolumeDicomHandler:
         pixel_array_list = []
         for dcm in self.dcm_series:
             pixel_array_list.append(dcm.pixel_array)
-        voxel_array = np.stack(pixel_array_list, axis=-1)
+        voxel_array = np.stack(pixel_array_list, axis=0)
         self.identity_map.update({"voxel_array": voxel_array})
         return voxel_array
 

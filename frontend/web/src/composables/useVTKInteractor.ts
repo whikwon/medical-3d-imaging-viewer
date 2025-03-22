@@ -38,23 +38,8 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
 
     // Position the sphere based on visualization type
     if (activeVisualization && activeVisualization.data) {
-      const extent = activeVisualization.data.getExtent()
-      const spacing = activeVisualization.data.getSpacing()
       const origin = activeVisualization.data.getOrigin()
-
-      if (activeVisualization.type === 'multiframe') {
-        // For multiframe, position at bottom-left of first frame
-        const x = origin[0] + extent[0] * spacing[0]
-        const y = origin[1] + extent[2] * spacing[1]
-        const z = origin[2] + extent[4] * spacing[2]
-        actor.setPosition(x, y, z)
-      } else {
-        // For CT volume, position at bottom-left of last slice
-        const x = origin[0] + extent[0] * spacing[0]
-        const y = origin[1] + extent[2] * spacing[1]
-        const z = origin[2] + extent[5] * spacing[2]
-        actor.setPosition(x, y, z)
-      }
+      actor.setPosition(origin[0], origin[1], origin[2])
     }
 
     // Create picker

@@ -3,7 +3,7 @@ import vtk
 
 
 class VtkRenderer:
-    def __init__(self, window_size=(600, 600), background_color=(1.0, 1.0, 1.0)):
+    def __init__(self, window_size=(1000, 1000), background_color=(0, 0, 0)):
         self.window_size = window_size
         self.renderer = vtk.vtkRenderer()
         self.renderer.SetBackground(*background_color)
@@ -11,7 +11,6 @@ class VtkRenderer:
         self.render_window = vtk.vtkRenderWindow()
         self.render_window.AddRenderer(self.renderer)
         self.render_window.SetSize(*self.window_size)
-        self.render_window.SetFullScreen(True)
 
         self.interactor = vtk.vtkRenderWindowInteractor()
         self.interactor.SetRenderWindow(self.render_window)
@@ -23,6 +22,11 @@ class VtkRenderer:
         image_actor.GetMapper().SetInputData(image_data)
         self.renderer.AddActor(image_actor)
         return image_actor
+
+    def add_actor(self, actor):
+        """Add a VTK actor to the renderer"""
+        self.renderer.AddActor(actor)
+        return actor
 
     def add_axes(self, length=40, cylinder_radius=0.02):
         """Add coordinate axes to the renderer"""
