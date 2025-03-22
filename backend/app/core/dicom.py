@@ -72,6 +72,7 @@ NAME2TAG = {
     "TableTopVerticalPosition": "0x300a0128",
     "TableTopLongitudinalPosition": "0x300a0129",
     "TableTopLateralPosition": "0x300a012a",
+    "SliceLocation": "0x00201041",
     "ImagePositionPatient": "0x00200032",
     "ImageOrientationPatient": "0x00200037",
     "TableHeight": "0x00181130",
@@ -111,34 +112,36 @@ def read_dicom_element_value(dcm, elem_name, type_cast_to=None):
 
 
 class BaseDicomHandler:
-    def __init__(self, dcm_or_path: Path | FileDataset):
-        if isinstance(dcm_or_path, Path):
-            self.ref_dcm = pydicom.dcmread(dcm_or_path)
+    def __init__(self, dcm_or_path: Path | str | FileDataset):
+        self.dcm_path = None
+        if isinstance(dcm_or_path, (Path, str)):
+            self.dcm_path = dcm_or_path
+            self.dcm = pydicom.dcmread(dcm_or_path)
         else:
-            self.ref_dcm = dcm_or_path
+            self.dcm = dcm_or_path
 
     def __repr__(self):
-        return str(self.ref_dcm)
+        return str(self.dcm)
 
     @property
     def series_description(self):
         """str: Long String"""
-        return read_dicom_element_value(self.ref_dcm, "SeriesDescription")
+        return read_dicom_element_value(self.dcm, "SeriesDescription")
 
     @property
     def study_instance_uid(self):
         """str: Unique Identifier"""
-        return read_dicom_element_value(self.ref_dcm, "StudyInstanceUID")
+        return read_dicom_element_value(self.dcm, "StudyInstanceUID")
 
     @property
     def sop_instance_uid(self):
         """str: Unique Identifier"""
-        return read_dicom_element_value(self.ref_dcm, "SOPInstanceUID")
+        return read_dicom_element_value(self.dcm, "SOPInstanceUID")
 
     @property
     def study_date(self):
         """str: Date"""
-        return read_dicom_element_value(self.ref_dcm, "StudyDate")
+        return read_dicom_element_value(self.dcm, "StudyDate")
 
     @property
     def pixel_array(self):
@@ -148,19 +151,19 @@ class BaseDicomHandler:
         - IVUS(3-channel), CAG(1-channel)
         - IVUS의 1번째 channel에 촬영 이미지가 있고 2, 3번째 channel에는 눈금자가 그려져있다.
         """
-        return self.ref_dcm.pixel_array
+        return self.dcm.pixel_array
 
     @property
     def imager_pixel_spacing(self):
         """
         float, list[float] or list[int]: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "ImagerPixelSpacing", float)
+        return read_dicom_element_value(self.dcm, "ImagerPixelSpacing", float)
 
     @property
     def number_of_frames(self):
         """int: Integer String"""
-        return read_dicom_element_value(self.ref_dcm, "NumberOfFrames", int)
+        return read_dicom_element_value(self.dcm, "NumberOfFrames", int)
 
     @property
     def cine_rate(self):
@@ -168,17 +171,17 @@ class BaseDicomHandler:
 
         Number of frames per second.
         """
-        return read_dicom_element_value(self.ref_dcm, "CineRate", float)
+        return read_dicom_element_value(self.dcm, "CineRate", float)
 
     @property
     def rows(self):
         """int: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "Rows")
+        return read_dicom_element_value(self.dcm, "Rows")
 
     @property
     def columns(self):
         """int: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "Columns")
+        return read_dicom_element_value(self.dcm, "Columns")
 
     @property
     def pixel_spacing(self):
@@ -196,42 +199,42 @@ class BaseDicomHandler:
         ----------
         .. [1] https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_10.7.html#sect_10.7.1.3
         """
-        return read_dicom_element_value(self.ref_dcm, "PixelSpacing", float)
+        return read_dicom_element_value(self.dcm, "PixelSpacing", float)
 
     @property
     def manufacturer(self):
         """str: Long String"""
-        return read_dicom_element_value(self.ref_dcm, "Manufacturer")
+        return read_dicom_element_value(self.dcm, "Manufacturer")
 
     @property
     def modality(self):
         """str: Code String"""
-        return read_dicom_element_value(self.ref_dcm, "Modality")
+        return read_dicom_element_value(self.dcm, "Modality")
 
     @property
     def data_value_representation(self):
         """int: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "DataValueRepresentation")
+        return read_dicom_element_value(self.dcm, "DataValueRepresentation")
 
     @property
     def curve_dimensions(self):
         """int: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "CurveDimensions")
+        return read_dicom_element_value(self.dcm, "CurveDimensions")
 
     @property
     def curve_data_descriptor(self):
         """int or list[int]: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "CurveDataDescriptor")
+        return read_dicom_element_value(self.dcm, "CurveDataDescriptor")
 
     @property
     def coordinate_start_value(self):
         """int or list[int]: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "CoordinateStartValue")
+        return read_dicom_element_value(self.dcm, "CoordinateStartValue")
 
     @property
     def coordinate_step_value(self):
         """int or list[int]: Unsigned Short"""
-        return read_dicom_element_value(self.ref_dcm, "CoordinateStepValue")
+        return read_dicom_element_value(self.dcm, "CoordinateStepValue")
 
     @property
     def number_of_points(self):
@@ -239,19 +242,19 @@ class BaseDicomHandler:
 
         Number of data points in curve.
         """
-        return read_dicom_element_value(self.ref_dcm, "NumberOfPoints")
+        return read_dicom_element_value(self.dcm, "NumberOfPoints")
 
     @property
     def content_time(self):
         """str: Time"""
-        return read_dicom_element_value(self.ref_dcm, "ContentTime")
+        return read_dicom_element_value(self.dcm, "ContentTime")
 
     @property
     def acquisition_date(self):
         """str: Date Time"""
-        date = read_dicom_element_value(self.ref_dcm, "AcquisitionDate")
+        date = read_dicom_element_value(self.dcm, "AcquisitionDate")
         if date is None:
-            date_time = read_dicom_element_value(self.ref_dcm, "AcquisitionDateTime")
+            date_time = read_dicom_element_value(self.dcm, "AcquisitionDateTime")
             if date_time is not None:
                 date = date_time[:8]
         return date
@@ -259,9 +262,9 @@ class BaseDicomHandler:
     @property
     def acquisition_time(self):
         """str: Date Time"""
-        time = read_dicom_element_value(self.ref_dcm, "AcquisitionTime")
+        time = read_dicom_element_value(self.dcm, "AcquisitionTime")
         if time is None:
-            date_time = read_dicom_element_value(self.ref_dcm, "AcquisitionDateTime")
+            date_time = read_dicom_element_value(self.dcm, "AcquisitionDateTime")
             if date_time is not None:
                 time = date_time[8:]
         return time
@@ -269,10 +272,10 @@ class BaseDicomHandler:
     @property
     def acquisition_date_time(self):
         """str: Date Time"""
-        date_time = read_dicom_element_value(self.ref_dcm, "AcquisitionDateTime")
+        date_time = read_dicom_element_value(self.dcm, "AcquisitionDateTime")
         if date_time is None:
-            date = read_dicom_element_value(self.ref_dcm, "AcquisitionDate")
-            time = read_dicom_element_value(self.ref_dcm, "AcquisitionTime")
+            date = read_dicom_element_value(self.dcm, "AcquisitionDate")
+            time = read_dicom_element_value(self.dcm, "AcquisitionTime")
             if date is not None:
                 if time is not None:
                     date_time = date + time
@@ -289,19 +292,17 @@ class BaseDicomHandler:
         ----------
         .. [1] https://www.documents.philips.com/doclib/enc/fetch/2000/4504/577242/577256/588723/5144873/5144488/5144772/DICOM_Conformance_Statement_Philips_IntraSight_1.0.pdf
         """
-        pullback_rate = read_dicom_element_value(
-            self.ref_dcm, "IVUSPullbackRate", float
-        )
+        pullback_rate = read_dicom_element_value(self.dcm, "IVUSPullbackRate", float)
         if pullback_rate is None:
             if self.manufacturer.lower().startswith("volcano"):
                 return read_dicom_element_value(
-                    self.ref_dcm, "IVUSPullbackRate_Philips", float
+                    self.dcm, "IVUSPullbackRate_Philips", float
                 )
 
     @property
     def type_of_data(self):
         """str: Code String"""
-        return read_dicom_element_value(self.ref_dcm, "TypeOfData")
+        return read_dicom_element_value(self.dcm, "TypeOfData")
 
     @property
     def curve_data(self):
@@ -312,7 +313,7 @@ class BaseDicomHandler:
         ----------
         .. [1] http://dicom.nema.org/dicom/2004/04_03pu.pdf
         """
-        curve_data = read_dicom_element_value(self.ref_dcm, "CurveData")
+        curve_data = read_dicom_element_value(self.dcm, "CurveData")
 
         if curve_data is not None:
             data_val_repr = self.data_value_representation
@@ -381,61 +382,61 @@ class BaseDicomHandler:
         """
         float: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "DistanceSourceToPatient", float)
+        return read_dicom_element_value(self.dcm, "DistanceSourceToPatient", float)
 
     @property
     def distance_source_to_detector(self):
         """
         float: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "DistanceSourceToDetector", float)
+        return read_dicom_element_value(self.dcm, "DistanceSourceToDetector", float)
 
     @property
     def window_center(self):
         """
         float: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "WindowCenter", float)
+        return read_dicom_element_value(self.dcm, "WindowCenter", float)
 
     @property
     def window_width(self):
         """
         float: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "WindowWidth", float)
+        return read_dicom_element_value(self.dcm, "WindowWidth", float)
 
     @property
     def positioner_primary_angle(self):
         """
         float: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "PositionerPrimaryAngle", float)
+        return read_dicom_element_value(self.dcm, "PositionerPrimaryAngle", float)
 
     @property
     def positioner_secondary_angle(self):
         """
         float: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "PositionerSecondaryAngle", float)
+        return read_dicom_element_value(self.dcm, "PositionerSecondaryAngle", float)
 
     @property
     def field_of_view(self):
         if self.manufacturer.lower().startswith("philips"):
-            return read_dicom_element_value(self.ref_dcm, "PhilipsFieldOfView", str)
+            return read_dicom_element_value(self.dcm, "PhilipsFieldOfView", str)
 
     @property
     def patient_id(self):
         """
         str: Long String
         """
-        return read_dicom_element_value(self.ref_dcm, "PatientID")
+        return read_dicom_element_value(self.dcm, "PatientID")
 
     @property
     def table_top_position(self):
         # https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.19.6.11.html
         if self.manufacturer.lower().startswith("philips"):
             try:
-                dataset = self.ref_dcm["0x2003102e"][0]
+                dataset = self.dcm["0x2003102e"][0]
                 lateral = read_dicom_element_value(
                     dataset, "TableTopLateralPosition", float
                 )
@@ -449,44 +450,36 @@ class BaseDicomHandler:
             except KeyError:
                 return None
 
-
-class CtImageDicomHandler(BaseDicomHandler):
-    def __init__(self, directory):
-        self.directory = directory
-        self.dicom_series = self.load_dicom_series()
-        self.ref_dcm = self.dicom_series[0]
-        self.identity_map = {}
-
-    def load_dicom_series(self):
+    @property
+    def slice_location(self):
         """
-        Load a DICOM series from the directory provided during object initialization.
-
-        Returns:
-            list: List of DICOM objects representing the series.
+        float: Decimal String
         """
-        dicom_files = [
-            os.path.join(self.directory, f)
-            for f in os.listdir(self.directory)
-            if f.endswith(".dcm")
-        ]
-        dicom_files.sort()  # Ensure files are sorted in the correct order
-        dicom_series = [pydicom.dcmread(f) for f in dicom_files]
-        return dicom_series
+        return read_dicom_element_value(self.dcm, "SliceLocation", float)
 
-    def __getitem__(self, idx):
-        return self.dicom_series[idx]
+    @property
+    def image_position_patient(self):
+        """list[float]: Decimal String
 
-    def __repr__(self):
-        return f"CT image DICOM data, spacing({self.spacing}), voxel({self.voxel_array.shape}, {self.voxel_array.dtype})"
+        The x, y, and z coordinates of the upper left hand corner (center of the first voxel transmitted) of the image, in mm.
+
+        If Anatomical Orientation Type (0010,2210) is absent or has a value of BIPED, the x-axis is increasing to the left hand side of the patient.
+        The y-axis is increasing to the posterior side of the patient. The z-axis is increasing toward the head of the patient.
+
+        Notes
+        -----
+        TableHeight can be a reference point. (Siemens SOMATOM Force)
+
+        References
+        ----------
+        .. [1] https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
+        """
+        return read_dicom_element_value(self.dcm, "ImagePositionPatient", float)
 
     @property
     def anatomical_orientation_type(self):
         """str: Code String"""
-        return read_dicom_element_value(self.ref_dcm, "AnatomicalOrientationType")
-
-    @property
-    def number_of_slices(self):
-        return len(self.dicom_series)
+        return read_dicom_element_value(self.dcm, "AnatomicalOrientationType")
 
     @property
     def spacing_between_slices(self):
@@ -497,14 +490,36 @@ class CtImageDicomHandler(BaseDicomHandler):
         ----------
         .. [1] https://stackoverflow.com/questions/14930222/how-to-calculate-space-between-dicom-slices-for-mpr
         """
-        return read_dicom_element_value(self.ref_dcm, "SpacingBetweenSlices", float)
+        return read_dicom_element_value(self.dcm, "SpacingBetweenSlices", float)
 
     @property
     def slice_thickness(self):
         """
         float, list[float] or list[int]: Decimal String
         """
-        return read_dicom_element_value(self.ref_dcm, "SliceThickness", float)
+        return read_dicom_element_value(self.dcm, "SliceThickness", float)
+
+    @property
+    def image_orientation_patient(self):
+        """list[float]: Decimal String
+
+        Image Orientation (Patient) (0020,0037) specifies the direction cosines of the first row and the first column with respect to the patient.
+
+        References
+        ----------
+        .. [1] https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
+        """
+        return read_dicom_element_value(self.dcm, "ImageOrientationPatient", float)
+
+    @property
+    def table_height(self):
+        """float: Decimal String"""
+        return read_dicom_element_value(self.dcm, "TableHeight", float)
+
+    @property
+    def patient_position(self):
+        """str: Code String"""
+        return read_dicom_element_value(self.dcm, "PatientPosition")
 
     @property
     def spacing(self):
@@ -522,6 +537,95 @@ class CtImageDicomHandler(BaseDicomHandler):
             raise ValueError("Spacing between slices is not defined")
         return pixel_spacing + [spacing_between_slices]
 
+
+class VolumeDicomHandler:
+    def __init__(self, dir_path_or_dcms: Path | str | list[FileDataset]):
+        self.dcm_dir_path = None
+        if isinstance(dir_path_or_dcms, (Path, str)):
+            if not isinstance(dir_path_or_dcms, Path):
+                self.dcm_dir_path = Path(dir_path_or_dcms)
+            else:
+                self.dcm_dir_path = dir_path_or_dcms
+            self.dcm_series = self.load_dicom_series()
+        else:
+            self.dcm_series = [BaseDicomHandler(dcm) for dcm in dir_path_or_dcms]
+        self.dcm_series = self._sort_dicom_datasets(self.dcm_series)
+        self.ref_dcm = self.dcm_series[0]
+        self.identity_map = {}
+
+    @property
+    def columns(self):
+        return self.ref_dcm.columns
+
+    @property
+    def rows(self):
+        return self.ref_dcm.rows
+
+    @property
+    def spacing(self):
+        return self.ref_dcm.spacing
+
+    @property
+    def spacing_between_slices(self):
+        return self.ref_dcm.spacing_between_slices
+
+    @property
+    def slice_thickness(self):
+        return self.ref_dcm.slice_thickness
+
+    @property
+    def image_orientation_patient(self):
+        return self.ref_dcm.image_orientation_patient
+
+    def load_dicom_series(self):
+        """
+        Load a DICOM series from the directory provided during object initialization.
+
+        Returns:
+            list: List of DICOM objects representing the series, sorted by anatomical position.
+        """
+        dcm_path_list = list(self.dcm_dir_path.glob("*.dcm"))
+        dcm_series = []
+        for dcm_path in dcm_path_list:
+            dcm_series.append(BaseDicomHandler(dcm_path))
+        return dcm_series
+
+    def _sort_dicom_datasets(self, dicom_datasets):
+        """
+        Sort DICOM datasets by anatomical position.
+
+        Args:
+            dicom_datasets: List of DICOM datasets to sort
+
+        Returns:
+            list: Sorted list of DICOM datasets
+        """
+        position_info = []
+
+        for i, dataset in enumerate(dicom_datasets):
+            if dataset.slice_location is not None:
+                position = dataset.slice_location
+            elif dataset.image_position_patient is not None:
+                position = dataset.image_position_patient[2]
+            else:
+                position = i
+
+            position_info.append((position, i))
+
+        position_info.sort(key=lambda x: x[0])
+        sorted_datasets = [dicom_datasets[idx] for _, idx in position_info]
+        return sorted_datasets
+
+    def __getitem__(self, idx):
+        return self.dcm_series[idx]
+
+    def __repr__(self):
+        return f"{self.modality} image DICOM data, spacing({self.spacing}), voxel({self.voxel_array.shape}, {self.voxel_array.dtype})"
+
+    @property
+    def number_of_slices(self):
+        return len(self.dcm_series)
+
     @property
     def voxel_array(self):
         """
@@ -530,7 +634,7 @@ class CtImageDicomHandler(BaseDicomHandler):
         if "voxel_array" in self.identity_map:
             return self.identity_map["voxel_array"]
         pixel_array_list = []
-        for dcm in self.dicom_series:
+        for dcm in self.dcm_series:
             pixel_array_list.append(dcm.pixel_array)
         voxel_array = np.stack(pixel_array_list, axis=-1)
         self.identity_map.update({"voxel_array": voxel_array})
@@ -557,7 +661,11 @@ class CtImageDicomHandler(BaseDicomHandler):
         TableHeight can be a reference point. (Siemens SOMATOM Force)
         """
         return np.array(
-            [(self.columns - 1) / 2, (self.rows - 1) / 2, self.number_of_slices / 2]
+            [
+                (self.columns - 1) / 2,
+                (self.rows - 1) / 2,
+                self.number_of_slices / 2,
+            ]
         )
 
     @property
@@ -567,59 +675,22 @@ class CtImageDicomHandler(BaseDicomHandler):
             return float(delay[0]) / 100
         return None
 
-    def image_position_patient(self, idx):
-        """list[float]: Decimal String
-        The x, y, and z coordinates of the upper left hand corner (center of the first voxel transmitted) of the image, in mm.
-
-        If Anatomical Orientation Type (0010,2210) is absent or has a value of BIPED, the x-axis is increasing to the left hand side of the patient.
-        The y-axis is increasing to the posterior side of the patient. The z-axis is increasing toward the head of the patient.
-
-        Notes
-        -----
-        TableHeight can be a reference point. (Siemens SOMATOM Force)
-
-        References
-        ----------
-        .. [1] https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
-        """
-        if self.anatomical_orientation_type == "QUADRUPED":
-            raise NotImplementedError("QUADRUPED is not supported yet")
-
+    def get_image_position_patient(self, idx: int | float):
         if isinstance(idx, int):
-            return read_dicom_element_value(
-                self.dicom_series[idx], "ImagePositionPatient", float
-            )
-        elif isinstance(idx, float):
+            return self.dcm_series[idx].image_position_patient
+        else:
             frac_part, int_part = math.modf(idx)
             int_part = int(int_part)
             if frac_part > 0:
-                x1, y1, z1 = read_dicom_element_value(
-                    self.dicom_series[int_part], "ImagePositionPatient", float
-                )
-                x2, y2, z2 = read_dicom_element_value(
-                    self.dicom_series[int_part + 1], "ImagePositionPatient", float
-                )
+                x1, y1, z1 = self.dcm_series[int_part].image_position_patient
+                x2, y2, z2 = self.dcm_series[int_part + 1].image_position_patient
                 return (
                     x1 + (x2 - x1) * frac_part,
                     y1 + (y2 - y1) * frac_part,
                     z1 + (z2 - z1) * frac_part,
                 )
             else:
-                return read_dicom_element_value(
-                    self.dicom_series[int_part], "ImagePositionPatient", float
-                )
-
-    @property
-    def image_orientation_patient(self):
-        """list[float]: Decimal String
-
-        Image Orientation (Patient) (0020,0037) specifies the direction cosines of the first row and the first column with respect to the patient.
-
-        References
-        ----------
-        .. [1] https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
-        """
-        return read_dicom_element_value(self.ref_dcm, "ImageOrientationPatient", float)
+                return self.dcm_series[int_part].image_position_patient
 
     def voxel_to_rcs_coordinate(self, voxel_coordinate):
         """
@@ -632,80 +703,22 @@ class CtImageDicomHandler(BaseDicomHandler):
         .. [1] https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.2.html#sect_C.7.6.2.1.1
         .. [2] https://blog.redbrickai.com/blog-posts/introduction-to-dicom-coordinate
         """
+        if self.ref_dcm.anatomical_orientation_type == "QUADRUPED":
+            raise NotImplementedError("QUADRUPED is not supported yet")
+
         x, y, z = voxel_coordinate
 
-        iop = image_orientation_to_matrix(self.image_orientation_patient)
-        iop[:, 0] *= self.pixel_spacing[1]
-        iop[:, 1] *= self.pixel_spacing[0]
-        ipp = np.array(self.image_position_patient(z)).reshape(3, 1)
+        pixel_spacing = self.ref_dcm.pixel_spacing
+        image_orientation = np.array(self.ref_dcm.image_orientation_patient)
+        image_position = np.array(self.get_image_position_patient(z))  # [S_x, S_y, S_z]
 
-        M = np.concatenate([iop, ipp], axis=1)
+        M = np.stack(
+            [
+                image_orientation[:3] * pixel_spacing[1],
+                image_orientation[3:] * pixel_spacing[0],
+                np.zeros((3,)),
+                image_position,
+            ],
+            axis=-1,
+        )
         return (M @ np.array([[x, y, 0, 1]]).T).T[0]
-
-    @property
-    def table_height(self):
-        """float: Decimal String"""
-        return read_dicom_element_value(self.ref_dcm, "TableHeight", float)
-
-    @property
-    def patient_position(self):
-        """str: Code String"""
-        return read_dicom_element_value(self.ref_dcm, "PatientPosition")
-
-
-def image_orientation_to_matrix(orientation):
-    x = orientation[:3]
-    y = orientation[3:]
-    z = np.zeros((3,))
-    return np.stack([x, y, z], axis=-1)
-
-
-def create_frame_gating_delay_mapper(
-    r_peak_indices: np.ndarray, cine_rate: float, sampling_rate: int, num_frames: int
-):
-    """
-    Parameters
-    ----------
-    r_peak_indices: np.ndarray
-        R-peak indices of ecg_signal
-    cine_rate: float
-    sampling_rate: int
-    num_frames: int
-
-    Returns
-    -------
-    frame_gating_delay_mapper: np.ndarray
-    """
-    # Convert R-peak indices to time in seconds
-    r_peak_times = r_peak_indices / sampling_rate
-
-    # Calculate time interval between frames in seconds
-    frame_interval = 1 / cine_rate
-
-    # Initialize an array to store gating delays for each frame
-    frame_gating_delay_mapper = [None] * num_frames
-
-    # Iterate through each frame index
-    for frame_idx in range(num_frames):
-        # Calculate the corresponding time point of the frame
-        frame_time = frame_idx * frame_interval
-
-        # Find the R-peak index that immediately precedes the frame time point
-        r_peak_idx = np.searchsorted(r_peak_times, frame_time, side="right")
-
-        if r_peak_idx == 0:
-            gating_delay = None
-        elif r_peak_idx == len(r_peak_times):
-            if frame_time == r_peak_times[-1]:
-                gating_delay = 1.0
-            else:
-                gating_delay = None
-        else:
-            rr_s = r_peak_times[r_peak_idx - 1]
-            rr_e = r_peak_times[r_peak_idx]
-            gating_delay = (frame_time - rr_s) / (rr_e - rr_s)
-
-        # Store the gating delay for the frame
-        frame_gating_delay_mapper[frame_idx] = gating_delay
-
-    return frame_gating_delay_mapper

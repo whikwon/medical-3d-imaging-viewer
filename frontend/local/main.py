@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from app.core.carm import CArm, CArmLPSAdapter
 from app.core.coordinate import CoordinateSystem, PatientCoordinates
-from app.core.dicom import BaseDicomHandler, CtImageDicomHandler
+from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
 from app.core.slicer_parser import SlicerMarkupsMrkJson
 from vtk_image_creator import VtkImageCreator
 from vtk_renderer import VtkRenderer
@@ -53,7 +53,7 @@ def main():
         renderer.add_image(image_data)
 
     # CT
-    dcm_handler = CtImageDicomHandler(CT_DIR_PATH)
+    dcm_handler = VolumeDicomHandler(CT_DIR_PATH)
     ct_center_position = PatientCoordinates(
         dcm_handler.volume_center_position_mm, CoordinateSystem.LPS
     )

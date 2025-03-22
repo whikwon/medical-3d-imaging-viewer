@@ -117,15 +117,15 @@ class CArm:
 
     @property
     def source_basis_vector_x(self):
-        return self.rotation @ self.init_source_basis_vector_x
+        return self.rotation_matrix @ self.init_source_basis_vector_x
 
     @property
     def source_basis_vector_y(self):
-        return self.rotation @ self.init_source_basis_vector_y
+        return self.rotation_matrix @ self.init_source_basis_vector_y
 
     @property
     def source_basis_vector_z(self):
-        return self.rotation @ self.init_source_basis_vector_z
+        return self.rotation_matrix @ self.init_source_basis_vector_z
 
     @property
     def detector_size(self):
@@ -146,7 +146,7 @@ class CArm:
     @property
     def extrinsic_matrix(self):
         """world to camera"""
-        R = self.rotation.inv().as_matrix()
+        R = np.linalg.inv(self.rotation_matrix)
         T = R @ -self.table_top_position_adjusted_source_pt.reshape(-1, 1)
         return np.concatenate([R, T], axis=1)
 
@@ -155,7 +155,7 @@ class CArm:
         return self.intrinsic_matrix @ self.extrinsic_matrix
 
     @property
-    def rotation(self):
+    def rotation_matrix(self):
         return Rotation.from_euler(
             "xyz", angles=[-self.alpha, -self.beta, 0], degrees=True
         ).as_matrix()
@@ -190,7 +190,7 @@ class CArm:
         """
         self.alpha = alpha
         self.beta = beta
-        self.source_pt = self.rotation @ self.init_source_pt
+        self.source_pt = self.rotation_matrix @ self.init_source_pt
 
     def table_move(self, table_top_position):
         self.table_top_position = table_top_position
@@ -207,7 +207,7 @@ class CArm:
             world_to_camera(
                 obj,
                 self.table_top_position_adjusted_source_pt,
-                np.linalg.inv(self.rotation),
+                np.linalg.inv(self.rotation_matrix),
             ),
             self.intrinsic_matrix,
         )
@@ -217,7 +217,7 @@ class CArm:
         return camera_to_world(
             image_to_camera(pts_2d, self.intrinsic_matrix, self.sid),
             self.table_top_position_adjusted_source_pt,
-            self.rotation,
+            self.rotation_matrix,
         )
 
     @property
@@ -285,7 +285,7 @@ class CArmLPSAdapter:
     @property
     def rotation(self):
         """Return rotation matrix in LPS coordinates"""
-        return self.ILA_TO_LPS @ self.carm.rotation
+        return self.ILA_TO_LPS @ self.carm.rotation_matrix
 
     @property
     def intrinsic_matrix(self):

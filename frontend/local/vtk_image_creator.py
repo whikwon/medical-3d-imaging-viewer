@@ -1,18 +1,14 @@
 import numpy as np
 import vtk
-from app.core.carm import CArm, CArmLPSAdapter
-from app.core.coordinate import (
-    CoordinateSystem,
-    PatientCoordinates,
-    TransformationMatrix,
-)
-from app.core.dicom import BaseDicomHandler, CtImageDicomHandler
+from app.core.carm import CArmLPSAdapter
+from app.core.coordinate import CoordinateSystem, PatientCoordinates
+from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
 from vtkmodules.util import numpy_support
 
 
 class VtkImageCreator:
     @staticmethod
-    def create_ct_image(dcm_handler: CtImageDicomHandler):
+    def create_ct_image(dcm_handler: VolumeDicomHandler):
         """Create a VTK image from DICOM data"""
         # Get dimension and spacing information
         dimensions = [
@@ -26,7 +22,7 @@ class VtkImageCreator:
         volume = dcm_handler.voxel_array
 
         # Get origin from the first slice's ImagePositionPatient
-        origin = dcm_handler.image_position_patient(0)
+        origin = dcm_handler.get_image_position_patient(0)
         origin = PatientCoordinates(np.array(origin), CoordinateSystem.LPS).to_world(
             "HFS"
         )

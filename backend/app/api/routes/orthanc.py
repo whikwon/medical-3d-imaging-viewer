@@ -23,8 +23,9 @@ from pyorthanc import (
 from vtkmodules.util import numpy_support
 
 from app.core.carm import CArm, CArmLPSAdapter
-from app.core.dicom import BaseDicomHandler
+from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
 from app.core.orthanc import orthanc_client
+from app.core.vtk_utils import rotation_matrix_to_vtk_direction_matrix
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -110,76 +111,48 @@ async def get_series_data(series_id: str):
 
 
 async def _process_volume_data(instances):
-    """Process volumetric data (CT, MR, etc.)"""
+    """Process volumetric data (CT, MR, etc.) using CtImageDicomHandler"""
     if not instances:
         raise HTTPException(status_code=404, detail="No instances found")
 
-    # First get all DICOM datasets and extract position info for sorting
-    dicom_datasets = []
-    position_info = []
+    # Get all DICOM datasets
+    dicom_datasets = [instance.get_pydicom() for instance in instances]
 
-    for instance in instances:
-        # Get DICOM data directly as bytes
-        dataset = instance.get_pydicom()
-        dicom_datasets.append(dataset)
+    # Create CtImageDicomHandler with the datasets
+    ct_handler = VolumeDicomHandler(dicom_datasets)
 
-        # Extract position for sorting
-        try:
-            if hasattr(dataset, "SliceLocation"):
-                position = float(dataset.SliceLocation)
-            elif hasattr(dataset, "ImagePositionPatient"):
-                position = float(dataset.ImagePositionPatient[2])
-            else:
-                position = 0.0
-        except Exception:
-            position = 0.0
+    # Get volume dimensions and shape
+    volume = ct_handler.voxel_array
+    slice_shape = volume.shape[:2]
+    num_slices = volume.shape[2]
 
-        position_info.append((position, len(dicom_datasets) - 1))
+    # Get spacing from the handler
+    spacing = ct_handler.spacing
 
-    # Sort datasets by position
-    position_info.sort(key=lambda x: x[0])
-    sorted_indices = [x[1] for x in position_info]
-    sorted_datasets = [dicom_datasets[i] for i in sorted_indices]
+    # Get image orientation and create direction matrix
+    image_orientation = ct_handler.image_orientation_patient
+    basis_vector_x = np.array(image_orientation[:3])
+    basis_vector_y = np.array(image_orientation[3:6])
+    basis_vector_z = np.cross(basis_vector_x, basis_vector_y)
+    rotation_matrix = np.array([basis_vector_x, basis_vector_y, basis_vector_z])
+    direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix.T)
 
-    # Get volume dimensions and properties from the first dataset
-    first_dataset = sorted_datasets[0]
-    slice_shape = first_dataset.pixel_array.shape
-    num_slices = len(sorted_datasets)
-
-    # Extract or calculate spacing
-    spacing = [
-        float(getattr(first_dataset, "PixelSpacing", [1.0, 1.0])[0]),
-        float(getattr(first_dataset, "PixelSpacing", [1.0, 1.0])[1]),
-        float(getattr(first_dataset, "SliceThickness", 1.0)),
-    ]
-
-    # Extract or calculate origin
-    if hasattr(first_dataset, "ImagePositionPatient"):
-        origin = [float(x) for x in first_dataset.ImagePositionPatient]
-    else:
-        origin = [0.0, 0.0, 0.0]
-
-    # Create 3D volume array
-    dtype = sorted_datasets[0].pixel_array.dtype
-    volume = np.zeros((num_slices, *slice_shape), dtype=dtype)
-
-    # Fill the volume with pixel data
-    for i, dataset in enumerate(sorted_datasets):
-        pixel_array = dataset.pixel_array
-        volume[i] = pixel_array
+    # Get origin (position of first slice)
+    origin = ct_handler.get_image_position_patient(0)
 
     # Create VTK image data
     vtk_image = vtk.vtkImageData()
     vtk_image.SetDimensions(slice_shape[1], slice_shape[0], num_slices)
     vtk_image.SetSpacing(spacing)
     vtk_image.SetOrigin(origin)
+    vtk_image.SetDirectionMatrix(direction_matrix)
 
     # Ensure data type compatibility with VTK
     if volume.dtype != np.uint16 and volume.dtype != np.int16:
         # Convert to uint16 for consistency
-        volume_flat = volume.astype(np.uint16).flatten()
+        volume_flat = volume.astype(np.uint16).reshape(-1)
     else:
-        volume_flat = volume.flatten()
+        volume_flat = volume.reshape(-1)
 
     # Convert numpy array to VTK array
     vtk_array = numpy_support.numpy_to_vtk(
@@ -206,7 +179,6 @@ async def _process_volume_data(instances):
     if isinstance(vti_data, str):
         vti_data = vti_data.encode("utf-8")
 
-    # Return the VTI data with metadata
     return Response(content=vti_data, media_type="application/octet-stream")
 
 
@@ -269,10 +241,7 @@ async def _process_multiframe_data(instances):
     vtk_image.SetOrigin(origin)
 
     # Create vtkMatrix3x3 and populate it with rotation matrix values
-    direction_matrix = vtk.vtkMatrix3x3()
-    for i in range(3):
-        for j in range(3):
-            direction_matrix.SetElement(i, j, rotation_matrix[i][j])
+    direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix.T)
 
     # Set the direction matrix using the vtkMatrix3x3 object
     vtk_image.SetDirectionMatrix(direction_matrix)
