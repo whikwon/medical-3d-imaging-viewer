@@ -74,7 +74,7 @@ class VtkImageCreator:
         return image_data
 
     @staticmethod
-    def create_xa_image(dcm_handler: BaseDicomHandler, carm: CArm):
+    def create_xa_image(dcm_handler: BaseDicomHandler, carm: CArmLPSAdapter):
         """Create a VTK image from DICOM data and CArm parameters"""
         # Get dimension and spacing information
         num_frames = dcm_handler.number_of_frames
@@ -86,23 +86,8 @@ class VtkImageCreator:
         frames = dcm_handler.pixel_array
 
         # Calculate origin and direction
-        detector_position = carm.detector_center_pt_3d
-        basis_vector_x = carm.source_basis_vector_x
-        basis_vector_y = carm.source_basis_vector_y
-        detector_size = carm.detector_size
-        origin = (
-            detector_position
-            - basis_vector_x * detector_size[0] / 2
-            - basis_vector_y * detector_size[1] / 2
-        )
-
-        # carm = CArmLPSAdapter(carm)
-        ila_to_lps = TransformationMatrix.get_coordinate_transform_matrix(
-            CoordinateSystem.ILA, CoordinateSystem.LPS
-        )
-        origin = ila_to_lps @ origin
-        rotation_matrix = ila_to_lps @ carm.rotation
-        # rotation_matrix = carm.rotation
+        origin = carm.image_origin
+        rotation_matrix = carm.rotation
 
         # Create direction matrix
         direction_matrix = vtk.vtkMatrix3x3()

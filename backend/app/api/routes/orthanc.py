@@ -6,7 +6,7 @@ This demonstrates how to use the Orthanc client throughout the application.
 import logging
 
 # Now convert the NumPy volume to VTI format
-from typing import Any, List, Union
+from typing import Any
 
 import numpy as np
 import vtk
@@ -22,7 +22,7 @@ from pyorthanc import (
 )
 from vtkmodules.util import numpy_support
 
-from app.core.carm import CArm
+from app.core.carm import CArm, CArmLPSAdapter
 from app.core.dicom import BaseDicomHandler
 from app.core.orthanc import orthanc_client
 
@@ -31,26 +31,20 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/patients")
-async def get_patients(
-    query: dict[str, Any] = None, labels: Union[List[str], str] = None
-):
+async def get_patients(query: dict[str, Any] = None, labels: list[str] | str = None):
     """Get all patients from Orthanc."""
     return find_patients(orthanc_client.client, query, labels)
 
 
 @router.get("/studies")
-async def get_studies(
-    query: dict[str, Any] = None, labels: Union[List[str], str] = None
-):
+async def get_studies(query: dict[str, Any] = None, labels: list[str] | str = None):
     """Get all studies from Orthanc."""
     studies = find_studies(orthanc_client.client, query, labels)
     return [study.get_main_information() for study in studies]
 
 
 @router.get("/instances")
-async def get_instances(
-    query: dict[str, Any] = None, labels: Union[List[str], str] = None
-):
+async def get_instances(query: dict[str, Any] = None, labels: list[str] | str = None):
     """Get all instances from Orthanc."""
     instances = find_instances(orthanc_client.client, query, labels)
     dicoms = []
@@ -247,17 +241,23 @@ async def _process_multiframe_data(instances):
     spacing = [imager_pixel_spacing[0], imager_pixel_spacing[1], 1.0]
 
     # Isocenter
+    alpha = dcm_handler.positioner_primary_angle
+    beta = dcm_handler.positioner_secondary_angle
     carm = CArm(
-        alpha=dcm_handler.positioner_primary_angle,
-        beta=dcm_handler.positioner_secondary_angle,
+        alpha=alpha,
+        beta=beta,
         sid=dcm_handler.distance_source_to_detector,
         sod=dcm_handler.distance_source_to_patient,
         imager_pixel_spacing=spacing,
         rows=dcm_handler.rows,
         columns=dcm_handler.columns,
-        table_top_position=dcm_handler.table_top_position,
+        table_top_position=np.array([0, 0, 0]),
     )
-    detector_position = carm.detector_center_pt_3d
+    carm = CArmLPSAdapter(carm)
+    origin = carm.image_origin
+    rotation_matrix = carm.rotation
+    # direction matrix 값이 같은데 vtk.js로 가면 반대로 나옴
+    rotation_matrix = rotation_matrix.T
 
     # Create a 3D volume from the frames
     frames = dcm_handler.pixel_array
@@ -266,11 +266,10 @@ async def _process_multiframe_data(instances):
     vtk_image = vtk.vtkImageData()
     vtk_image.SetDimensions(frame_shape[1], frame_shape[0], num_frames)
     vtk_image.SetSpacing(spacing)
-    vtk_image.SetOrigin(detector_position)
+    vtk_image.SetOrigin(origin)
 
     # Create vtkMatrix3x3 and populate it with rotation matrix values
     direction_matrix = vtk.vtkMatrix3x3()
-    rotation_matrix = carm.rotation.as_matrix()
     for i in range(3):
         for j in range(3):
             direction_matrix.SetElement(i, j, rotation_matrix[i][j])

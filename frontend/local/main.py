@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-from app.core.carm import CArm
+from app.core.carm import CArm, CArmLPSAdapter
 from app.core.coordinate import CoordinateSystem, PatientCoordinates
 from app.core.dicom import BaseDicomHandler, CtImageDicomHandler
 from app.core.slicer_parser import SlicerMarkupsMrkJson
@@ -47,6 +47,7 @@ def main():
             np.array([0, 0, 0]),
             # dcm_handler.table_top_position,
         )
+        carm = CArmLPSAdapter(carm)
         # Create VTK image
         image_data = VtkImageCreator.create_xa_image(dcm_handler, carm)
         renderer.add_image(image_data)

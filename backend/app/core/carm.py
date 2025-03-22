@@ -220,6 +220,14 @@ class CArm:
             self.rotation,
         )
 
+    @property
+    def image_origin(self):
+        return (
+            self.detector_center_pt_3d
+            - self.source_basis_vector_x * self.detector_size[0] / 2
+            - self.source_basis_vector_y * self.detector_size[1] / 2
+        )
+
 
 class CArmLPSAdapter:
     """
@@ -304,3 +312,7 @@ class CArmLPSAdapter:
         """Convert image points to world points in LPS coordinates"""
         pts_world_ila = self.carm.image_to_world(pts_2d)
         return self.ILA_TO_LPS @ pts_world_ila
+
+    @property
+    def image_origin(self):
+        return self.ILA_TO_LPS @ self.carm.image_origin
