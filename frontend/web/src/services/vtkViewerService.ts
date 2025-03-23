@@ -6,10 +6,23 @@ import vtkRenderWindowInteractor from '@kitware/vtk.js/Rendering/Core/RenderWind
 import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreenRenderWindow'
 
 export interface VTKViewerInstance {
-  renderWindow: VtkObject
-  renderer: VtkObject
+  renderWindow: {
+    render: () => void
+    delete: () => void
+    getViews: () => any[]
+  }
+  renderer: {
+    addActor: (actor: VtkObject) => void
+    removeActor: (actor: VtkObject) => void
+    resetCamera: () => void
+    getActiveCamera: () => any
+  }
   fullScreenRenderer: VtkObject
-  interactor: VtkObject
+  interactor: {
+    setView: (view: any) => void
+    initialize: () => void
+    bindEvents: (container: HTMLElement) => void
+  }
 }
 
 interface AxesConfig {

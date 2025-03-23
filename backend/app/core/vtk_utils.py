@@ -46,7 +46,7 @@ def create_vtk_image_from_volume(
     Args:
         ct_handler: The volume DICOM handler with the dataset
         center_at_origin: If True, centers the volume at world origin (0,0,0)
-        transpose_direction_matrix: If True, transposes the direction matrix for VTK.js
+        column_major: If True, uses column-major order for the direction matrix
 
     Returns:
         VTK image data object
@@ -97,7 +97,7 @@ def create_vtk_image_from_volume(
 def create_vtk_image_from_multiframe(
     dcm_handler: BaseDicomHandler,
     carm: CArmLPSAdapter,
-    transpose_direction_matrix: bool = False,
+    column_major: bool = False,
 ) -> vtk.vtkImageData:
     """
     Create a VTK image from multiframe DICOM data (XA, US, etc.)
@@ -105,7 +105,7 @@ def create_vtk_image_from_multiframe(
     Args:
         dcm_handler: The DICOM handler with the dataset
         carm: The C-arm adapter with geometry information
-        transpose_direction_matrix: If True, transposes the direction matrix for VTK.js
+        column_major: If True, uses column-major order for the direction matrix
 
     Returns:
         VTK image data object
@@ -124,10 +124,9 @@ def create_vtk_image_from_multiframe(
     rotation_matrix = carm.rotation
 
     # Create direction matrix
-    # For backend use, we need to transpose the matrix to maintain consistency with vtk.js
-    if transpose_direction_matrix:
-        rotation_matrix = rotation_matrix.T
-    direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix)
+    direction_matrix = rotation_matrix_to_vtk_direction_matrix(
+        rotation_matrix, column_major=column_major
+    )
 
     # Convert numpy array to VTK array
     if frames.dtype != np.uint16 and frames.dtype != np.int16:
@@ -146,7 +145,6 @@ def create_vtk_image_from_multiframe(
     image_data.SetOrigin(origin)
     image_data.SetDirectionMatrix(direction_matrix)
     image_data.GetPointData().SetScalars(vtk_array)
-    print("direction_matrix", image_data.GetDirectionMatrix())
 
     return image_data
 

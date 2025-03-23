@@ -12,6 +12,8 @@ import type { Visualization } from '@/types/visualization'
  * @param seriesId - Orthanc series ID
  * @param series - Series metadata
  * @param vtiData - The VTI blob data
+ * @param windowWidth - Optional window width from DICOM/backend
+ * @param windowCenter - Optional window center from DICOM/backend
  * @returns Visualization metadata and control values
  */
 export async function loadVolumeVisualization(
@@ -19,6 +21,8 @@ export async function loadVolumeVisualization(
   seriesId: string,
   series: Series,
   vtiData: Blob,
+  windowWidth: number,
+  windowCenter: number,
 ): Promise<{
   visualization: Visualization
   controlValues: {
@@ -77,10 +81,6 @@ export async function loadVolumeVisualization(
     const actorK = vtkImageSlice.newInstance()
     actorK.setMapper(imageMapperK)
 
-    // Set initial window/level settings for CT images
-    const windowWidth = 400
-    const windowCenter = 40
-
     actorI.getProperty().setColorLevel(windowCenter)
     actorI.getProperty().setColorWindow(windowWidth)
     actorJ.getProperty().setColorLevel(windowCenter)
@@ -135,6 +135,8 @@ export async function loadVolumeVisualization(
  * @param seriesId - Orthanc series ID
  * @param series - Series metadata
  * @param vtiData - The VTI blob data
+ * @param windowWidth - Window width from DICOM/backend
+ * @param windowCenter - Window center from DICOM/backend
  * @returns Visualization metadata and control values
  */
 export async function loadMultiframeVisualization(
@@ -142,10 +144,15 @@ export async function loadMultiframeVisualization(
   seriesId: string,
   series: Series,
   vtiData: Blob,
+  windowWidth: number,
+  windowCenter: number,
 ): Promise<{
   visualization: Visualization
   controlValues: {
     maxFrame: number
+    windowCenterMin: number
+    windowCenterMax: number
+    windowWidthMax: number
   }
 }> {
   const { renderer } = vtkInstance
@@ -171,12 +178,9 @@ export async function loadMultiframeVisualization(
     const actor = vtkImageSlice.newInstance()
     actor.setMapper(imageMapper)
 
-    // Set basic window/level based on data range
-    const ww = Math.ceil((dataRange[1] - dataRange[0]) / 2)
-    const wc = Math.floor(dataRange[0] + ww)
-
-    actor.getProperty().setColorLevel(wc)
-    actor.getProperty().setColorWindow(ww)
+    // Apply window/level from backend
+    actor.getProperty().setColorLevel(windowCenter)
+    actor.getProperty().setColorWindow(windowWidth)
 
     // Add actor to renderer
     if (renderer) {
@@ -197,6 +201,10 @@ export async function loadMultiframeVisualization(
       visualization,
       controlValues: {
         maxFrame: numFrames - 1,
+        // Calculate window level controls from data range, same as volume visualization
+        windowCenterMin: Math.floor(dataRange[0]),
+        windowCenterMax: Math.ceil(dataRange[1]),
+        windowWidthMax: Math.ceil(dataRange[1] - dataRange[0]),
       },
     }
   } finally {
@@ -206,8 +214,8 @@ export async function loadMultiframeVisualization(
 }
 
 /**
- * Applies window/level settings to a volume visualization
- * @param visualization - The volume visualization
+ * Applies window/level settings to a volume or multiframe visualization
+ * @param visualization - The visualization
  * @param windowCenter - Window center (level) value
  * @param windowWidth - Window width value
  */
@@ -216,9 +224,7 @@ export function applyWindowLevel(
   windowCenter: number,
   windowWidth: number,
 ): void {
-  if (visualization.type !== 'volume') return
-
-  // Apply to all actors in the volume
+  // Apply to all actors in the visualization
   visualization.actors.forEach((actor) => {
     actor.getProperty().setColorLevel(windowCenter)
     actor.getProperty().setColorWindow(windowWidth)

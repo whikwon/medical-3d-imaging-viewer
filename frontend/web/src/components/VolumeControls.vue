@@ -5,12 +5,6 @@
       <button @click="$emit('close')" class="overlay-close">×</button>
     </div>
 
-    <div class="preset-buttons">
-      <button @click="applyPreset('soft')" class="control-btn">Soft Tissue</button>
-      <button @click="applyPreset('lung')" class="control-btn">Lung</button>
-      <button @click="applyPreset('bone')" class="control-btn">Bone</button>
-    </div>
-
     <div class="sliders">
       <div class="slider-container">
         <label>Window Width:</label>
@@ -107,7 +101,6 @@ const emit = defineEmits<{
   (e: 'update:kSlice', value: number): void
   (e: 'windowLevelChanged'): void
   (e: 'slicesChanged'): void
-  (e: 'preset', type: 'soft' | 'lung' | 'bone'): void
 }>()
 
 // Helper methods
@@ -139,10 +132,6 @@ function updateKSlice(event: Event) {
   const target = event.target as HTMLInputElement
   emit('update:kSlice', parseInt(target.value))
   emit('slicesChanged')
-}
-
-function applyPreset(preset: 'soft' | 'lung' | 'bone') {
-  emit('preset', preset)
 }
 </script>
 
@@ -201,12 +190,6 @@ function applyPreset(preset: 'soft' | 'lung' | 'bone') {
 
 .control-btn:hover {
   background-color: #2b6fc5;
-}
-
-.preset-buttons {
-  display: flex;
-  gap: 5px;
-  margin-bottom: 10px;
 }
 
 .sliders,

@@ -44,7 +44,6 @@
         @close="closeOverlay"
         @windowLevelChanged="updateWindowLevel"
         @slicesChanged="updateSlices"
-        @preset="applyPreset"
       />
 
       <!-- Use the MultiframeControls component -->
@@ -52,11 +51,17 @@
         v-if="activeMultiframe && showControlOverlay"
         v-model:currentFrame="currentFrame"
         v-model:playbackSpeed="playbackSpeed"
+        v-model:windowWidth="windowWidth"
+        v-model:windowCenter="windowCenter"
+        :windowWidthMax="windowWidthMax"
+        :windowCenterMin="windowCenterMin"
+        :windowCenterMax="windowCenterMax"
         :maxFrame="maxFrame"
         :isPlaying="isPlaying"
         @close="closeOverlay"
         @frameChanged="updateMultiframeFrame"
         @togglePlayback="playMultiframe"
+        @windowLevelChanged="updateWindowLevel"
       />
 
       <!-- Control toggle button (visible when controls are hidden) -->
@@ -177,7 +182,13 @@ onBeforeUnmount(() => {
 })
 
 // Handler for when a series is loaded from the SeriesSelector component
-async function handleSeriesLoaded(seriesId: string, series: Series, vtiData: Blob) {
+async function handleSeriesLoaded(
+  seriesId: string,
+  series: Series,
+  vtiData: Blob,
+  receivedWindowWidth: number,
+  receivedWindowCenter: number,
+) {
   const vtkInstance = vtkInstanceRef.value
   if (!vtkInstance) return
 
@@ -190,7 +201,14 @@ async function handleSeriesLoaded(seriesId: string, series: Series, vtiData: Blo
 
     if (series.MainDicomTags.Modality === 'XA') {
       // Load multiframe visualization
-      const result = await loadMultiframeVisualization(vtkInstance, seriesId, series, vtiData)
+      const result = await loadMultiframeVisualization(
+        vtkInstance,
+        seriesId,
+        series,
+        vtiData,
+        receivedWindowWidth,
+        receivedWindowCenter,
+      )
 
       // Add visualization using our composable
       addVisualization(result.visualization)
@@ -198,9 +216,28 @@ async function handleSeriesLoaded(seriesId: string, series: Series, vtiData: Blo
       // Update multiframe controls
       maxFrame.value = result.controlValues.maxFrame
       currentFrame.value = 0
+
+      // Set window level control ranges based on data range
+      windowCenterMin.value = result.controlValues.windowCenterMin
+      windowCenterMax.value = result.controlValues.windowCenterMax
+      windowWidthMax.value = result.controlValues.windowWidthMax
+
+      // Apply window level settings from backend
+      windowWidth.value = receivedWindowWidth
+      windowCenter.value = receivedWindowCenter
+
+      // Apply window level settings to the visualization
+      applyWindowLevel(result.visualization, receivedWindowCenter, receivedWindowWidth)
     } else if (series.MainDicomTags.Modality === 'CT') {
       // Load volume visualization
-      const result = await loadVolumeVisualization(vtkInstance, seriesId, series, vtiData)
+      const result = await loadVolumeVisualization(
+        vtkInstance,
+        seriesId,
+        series,
+        vtiData,
+        receivedWindowWidth,
+        receivedWindowCenter,
+      )
 
       // Add visualization using our composable
       addVisualization(result.visualization)
@@ -216,11 +253,18 @@ async function handleSeriesLoaded(seriesId: string, series: Series, vtiData: Blo
       iSlice.value = controls.iSlice
       jSlice.value = controls.jSlice
       kSlice.value = controls.kSlice
+
+      // Set window level control ranges based on data range
       windowCenterMin.value = controls.windowCenterMin
       windowCenterMax.value = controls.windowCenterMax
       windowWidthMax.value = controls.windowWidthMax
-      windowWidth.value = 400
-      windowCenter.value = 40
+
+      // Apply window level settings from backend
+      windowWidth.value = receivedWindowWidth
+      windowCenter.value = receivedWindowCenter
+
+      // Apply window level settings to the visualization
+      applyWindowLevel(result.visualization, receivedWindowCenter, receivedWindowWidth)
     } else {
       throw new Error(`Unsupported modality: ${series.MainDicomTags.Modality}`)
     }
@@ -243,31 +287,16 @@ async function handleSeriesLoaded(seriesId: string, series: Series, vtiData: Blo
   }
 }
 
-function applyPreset(preset: 'soft' | 'lung' | 'bone') {
-  if (!activeVolume.value) return
-
-  switch (preset) {
-    case 'soft':
-      windowWidth.value = 400
-      windowCenter.value = 40
-      break
-    case 'lung':
-      windowWidth.value = 1500
-      windowCenter.value = -600
-      break
-    case 'bone':
-      windowWidth.value = 2500
-      windowCenter.value = 500
-      break
-  }
-  updateWindowLevel()
-}
-
 function updateWindowLevel() {
   const vtkInstance = vtkInstanceRef.value
-  if (!activeVolume.value || !vtkInstance?.renderWindow) return
+  if (!vtkInstance?.renderWindow) return
 
-  applyWindowLevel(activeVolume.value, windowCenter.value, windowWidth.value)
+  if (activeVolume.value) {
+    applyWindowLevel(activeVolume.value, windowCenter.value, windowWidth.value)
+  } else if (activeMultiframe.value) {
+    applyWindowLevel(activeMultiframe.value, windowCenter.value, windowWidth.value)
+  }
+
   vtkInstance.renderWindow.render()
 }
 

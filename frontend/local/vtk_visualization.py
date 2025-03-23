@@ -2,7 +2,7 @@ import vtk
 
 
 def create_multi_slice_image_mapper(
-    image_data: vtk.vtkImageData, window_width=None, window_center=None
+    image_data: vtk.vtkImageData, window_width: float, window_center: float
 ) -> dict:
     """
     Create a multi-slice image mapper and actors for orthogonal views (axial, coronal, sagittal)
@@ -48,25 +48,6 @@ def create_multi_slice_image_mapper(
     # Set initial window/level settings
     # Get data range
     scalar_range = image_data.GetScalarRange()
-
-    # Use DICOM window values if provided, otherwise use defaults
-    if window_width is not None and window_center is not None:
-        print(
-            f"Using DICOM window settings: Width={window_width}, Center={window_center}"
-        )
-    else:
-        # Adjust window/level settings for better CT visualization
-        # Typical window/level values for different CT tissues:
-        # - Bone: width ~2000, center ~500
-        # - Soft tissue: width ~400, center ~40
-        # - Lung: width ~1500, center ~-600
-
-        # Try a bone-like window that shows more detail and less brightness
-        window_width = 1500  # Wider window to see more range of values
-        window_center = 300  # Higher center value to reduce brightness
-        print(
-            f"Using default window settings: Width={window_width}, Center={window_center}"
-        )
 
     # Apply window/level settings to all actors
     actor_i.GetProperty().SetColorLevel(window_center)

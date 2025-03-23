@@ -5,6 +5,7 @@
       <button @click="$emit('close')" class="overlay-close">×</button>
     </div>
 
+    <!-- Playback controls -->
     <div class="slider-container">
       <label>Frame:</label>
       <input
@@ -33,16 +34,48 @@
         <span>{{ playbackSpeed }} fps</span>
       </div>
     </div>
+
+    <!-- Window Level controls -->
+    <div class="control-section">
+      <h5>Window/Level</h5>
+      <div class="slider-container">
+        <label>Width:</label>
+        <input
+          type="range"
+          :value="windowWidth"
+          @input="updateWindowWidth($event)"
+          :min="1"
+          :max="windowWidthMax"
+        />
+        <span>{{ windowWidth }}</span>
+      </div>
+      <div class="slider-container">
+        <label>Center:</label>
+        <input
+          type="range"
+          :value="windowCenter"
+          @input="updateWindowCenter($event)"
+          :min="windowCenterMin"
+          :max="windowCenterMax"
+        />
+        <span>{{ windowCenter }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 // Define props
-const props = defineProps<{
+defineProps<{
   currentFrame: number
   maxFrame: number
   isPlaying: boolean
   playbackSpeed: number
+  windowWidth: number
+  windowCenter: number
+  windowWidthMax: number
+  windowCenterMin: number
+  windowCenterMax: number
 }>()
 
 // Define emits
@@ -50,8 +83,11 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'update:currentFrame', value: number): void
   (e: 'update:playbackSpeed', value: number): void
+  (e: 'update:windowWidth', value: number): void
+  (e: 'update:windowCenter', value: number): void
   (e: 'frameChanged'): void
   (e: 'togglePlayback'): void
+  (e: 'windowLevelChanged'): void
 }>()
 
 // Helper methods
@@ -64,6 +100,18 @@ function updateCurrentFrame(event: Event) {
 function updatePlaybackSpeed(event: Event) {
   const target = event.target as HTMLInputElement
   emit('update:playbackSpeed', parseInt(target.value))
+}
+
+function updateWindowWidth(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:windowWidth', parseInt(target.value))
+  emit('windowLevelChanged')
+}
+
+function updateWindowCenter(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:windowCenter', parseInt(target.value))
+  emit('windowLevelChanged')
 }
 </script>
 
@@ -110,6 +158,17 @@ function updatePlaybackSpeed(event: Event) {
   color: #ff5252;
 }
 
+.control-section {
+  margin-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  padding-top: 12px;
+}
+
+.control-section h5 {
+  margin: 0 0 10px 0;
+  font-size: 0.9em;
+}
+
 .control-btn {
   background-color: #3f8cff;
   transition: background-color 0.2s;
@@ -129,6 +188,7 @@ function updatePlaybackSpeed(event: Event) {
   align-items: center;
   gap: 5px;
   font-size: 0.9em;
+  margin-bottom: 8px;
 }
 
 .slider-container label {

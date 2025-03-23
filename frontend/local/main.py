@@ -4,6 +4,7 @@ import numpy as np
 import vtk
 from app.core.carm import CArm, CArmLPSAdapter
 from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
+from app.core.intensity_transform import compute_optimal_window_level
 from app.core.slicer_parser import SlicerMarkupsMrkJson
 from vtk_image_creator import VtkImageCreator
 from vtk_renderer import VtkRenderer
@@ -71,41 +72,18 @@ def main():
     renderer.add_axes()
 
     # CT
-    dcm_handler = VolumeDicomHandler(CT_DIR_PATH)
-
-    dicom_window_center = dcm_handler.window_center
-    dicom_window_width = dcm_handler.window_width
-    if dicom_window_center is not None and dicom_window_width is not None:
-        window_width = dicom_window_width
-        window_level = dicom_window_center
-
+    ct_handler = VolumeDicomHandler(CT_DIR_PATH)
+    window_width, window_level = compute_optimal_window_level(ct_handler.voxel_array)
     # Create and add CT image
-    ct_image_data = VtkImageCreator.create_ct_image(dcm_handler)
+    ct_image_data = VtkImageCreator.create_ct_image(ct_handler)
 
     # Create 3-axis mappers and add to renderer, passing window settings from DICOM
     three_axis_view = VtkImageCreator.create_multi_slice_image_mapper(
         ct_image_data, window_width, window_level
     )
 
-    # Update global variables in case they were changed in create_3_axis_mappers
-    window_width = three_axis_view["window_width"]
-    window_level = three_axis_view["window_center"]
-
     # Store CT actors in global variable
     ct_actors = three_axis_view["actors"]
-
-    # Adjust positions of the three slice actors for better visualization
-    # Shift the slices to avoid overlapping
-    offset = 10  # Offset between planes for better visibility
-
-    # I slice (YZ plane)
-    three_axis_view["actors"][0].SetPosition(offset, 0, 0)
-
-    # J slice (XZ plane)
-    three_axis_view["actors"][1].SetPosition(0, offset, 0)
-
-    # K slice (XY plane)
-    three_axis_view["actors"][2].SetPosition(0, 0, offset)
 
     # Add all three actors to the renderer
     for actor in three_axis_view["actors"]:
@@ -123,21 +101,21 @@ def main():
 
     # XA
     for series_no in XA_SERIES_NO_LIST:
-        dcm_handler = BaseDicomHandler(XA_DIR_PATH / f"{series_no:03d}.dcm")
+        ct_handler = BaseDicomHandler(XA_DIR_PATH / f"{series_no:03d}.dcm")
         carm = CArm(
-            dcm_handler.positioner_primary_angle,
-            dcm_handler.positioner_secondary_angle,
-            dcm_handler.distance_source_to_detector,
-            dcm_handler.distance_source_to_patient,
-            dcm_handler.imager_pixel_spacing,
-            dcm_handler.rows,
-            dcm_handler.columns,
+            ct_handler.positioner_primary_angle,
+            ct_handler.positioner_secondary_angle,
+            ct_handler.distance_source_to_detector,
+            ct_handler.distance_source_to_patient,
+            ct_handler.imager_pixel_spacing,
+            ct_handler.rows,
+            ct_handler.columns,
             np.array([0, 0, 0]),
             # dcm_handler.table_top_position,
         )
         carm = CArmLPSAdapter(carm)
         # Create VTK image
-        image_data = VtkImageCreator.create_xa_image(dcm_handler, carm)
+        image_data = VtkImageCreator.create_xa_image(ct_handler, carm)
 
         # Position XA images further away to avoid overlap with CT slices
         renderer.add_image(image_data)

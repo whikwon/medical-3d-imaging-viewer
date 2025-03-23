@@ -20,6 +20,7 @@ from pyorthanc import (
 
 from app.core.carm import CArm, CArmLPSAdapter
 from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
+from app.core.intensity_transform import compute_optimal_window_level
 from app.core.orthanc import orthanc_client
 from app.core.vtk_utils import (
     create_vtk_image_from_multiframe,
@@ -129,7 +130,18 @@ async def _process_volume_data(instances):
     # Write to VTI format
     vti_data = write_vtk_image_to_vti(vtk_image)
 
-    return Response(content=vti_data, media_type="application/octet-stream")
+    # If window level information is not available in DICOM, calculate optimal values
+    window_width, window_center = compute_optimal_window_level(ct_handler.voxel_array)
+
+    # Create response with binary data and window level info
+    return Response(
+        content=vti_data,
+        media_type="application/octet-stream",
+        headers={
+            "X-Window-Width": str(window_width),
+            "X-Window-Center": str(window_center),
+        },
+    )
 
 
 async def _process_multiframe_data(instances):
@@ -170,10 +182,28 @@ async def _process_multiframe_data(instances):
     # Create VTK image data using the centralized utility function
     vtk_image = create_vtk_image_from_multiframe(dcm_handler, carm, column_major=True)
 
+    window_center = dcm_handler.window_center
+    window_width = dcm_handler.window_width
+    pixel_array = dcm_handler.pixel_array
+    assert pixel_array.dtype == np.uint8
+
+    if window_width is None or window_center is None:
+        window_width, window_center = compute_optimal_window_level(pixel_array)
+
     # Write to VTI format
     vti_data = write_vtk_image_to_vti(vtk_image)
 
-    return Response(content=vti_data, media_type="application/octet-stream")
+    # Include window level info and pixel type info in response headers
+    headers = {
+        "X-Window-Width": str(window_width),
+        "X-Window-Center": str(window_center),
+    }
+
+    return Response(
+        content=vti_data,
+        media_type="application/octet-stream",
+        headers=headers,
+    )
 
 
 @router.get("/studies/{study_id}/series")

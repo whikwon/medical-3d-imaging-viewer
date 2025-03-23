@@ -38,7 +38,14 @@ import { onMounted, ref } from 'vue'
 
 // Define props and emits
 const emit = defineEmits<{
-  (e: 'seriesLoaded', seriesId: string, series: Series, vtiData: Blob): void
+  (
+    e: 'seriesLoaded',
+    seriesId: string,
+    series: Series,
+    vtiData: Blob,
+    windowWidth: number,
+    windowCenter: number,
+  ): void
 }>()
 
 // State
@@ -98,10 +105,10 @@ async function loadSeries() {
     }
 
     // Fetch data from the backend
-    const vtiData = await fetchSeriesData(seriesId)
+    const result = await fetchSeriesData(seriesId)
 
     // Emit the loaded series data to parent component
-    emit('seriesLoaded', seriesId, series, vtiData)
+    emit('seriesLoaded', seriesId, series, result.data, result.windowWidth, result.windowCenter)
 
     // Clear the selection after successful loading
     // But keep the study selected to allow adding more series from the same study
