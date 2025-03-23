@@ -4,12 +4,9 @@ This demonstrates how to use the Orthanc client throughout the application.
 """
 
 import logging
-
-# Now convert the NumPy volume to VTI format
 from typing import Any
 
 import numpy as np
-import vtk
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pyorthanc import (
@@ -20,12 +17,15 @@ from pyorthanc import (
     find_patients,
     find_studies,
 )
-from vtkmodules.util import numpy_support
 
 from app.core.carm import CArm, CArmLPSAdapter
 from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
 from app.core.orthanc import orthanc_client
-from app.core.vtk_utils import rotation_matrix_to_vtk_direction_matrix
+from app.core.vtk_utils import (
+    create_vtk_image_from_multiframe,
+    create_vtk_image_from_volume,
+    write_vtk_image_to_vti,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -111,74 +111,23 @@ async def get_series_data(series_id: str):
 
 
 async def _process_volume_data(instances):
-    """Process volumetric data (CT, MR, etc.) using CtImageDicomHandler"""
+    """Process volumetric data (CT, MR, etc.) using VolumeDicomHandler"""
     if not instances:
         raise HTTPException(status_code=404, detail="No instances found")
 
     # Get all DICOM datasets
     dicom_datasets = [instance.get_pydicom() for instance in instances]
 
-    # Create CtImageDicomHandler with the datasets
+    # Create VolumeDicomHandler with the datasets
     ct_handler = VolumeDicomHandler(dicom_datasets)
 
-    # Get volume dimensions and shape
-    volume = ct_handler.voxel_array
-    dimensions = [
-        ct_handler.columns,
-        ct_handler.rows,
-        ct_handler.number_of_slices,
-    ]
-
-    # Get spacing from the handler
-    spacing = ct_handler.spacing
-
-    # Get image orientation and create direction matrix
-    rotation_matrix = ct_handler.image_direction_matrix
-    direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix.T)
-
-    # Get origin (position of first slice)
-    ct_center_position = ct_handler.volume_center_position_mm
-    origin = ct_handler.get_image_position_patient(0)
-    origin -= ct_center_position
-
-    # Create VTK image data
-    vtk_image = vtk.vtkImageData()
-    vtk_image.SetDimensions(dimensions)
-    vtk_image.SetSpacing(spacing)
-    vtk_image.SetOrigin(origin)
-    vtk_image.SetDirectionMatrix(direction_matrix)
-
-    # Ensure data type compatibility with VTK
-    if volume.dtype != np.uint16 and volume.dtype != np.int16:
-        # Convert to uint16 for consistency
-        volume_flat = volume.astype(np.uint16).flatten()
-    else:
-        volume_flat = volume.flatten()
-
-    # Convert numpy array to VTK array
-    vtk_array = numpy_support.numpy_to_vtk(
-        volume_flat, deep=True, array_type=vtk.VTK_UNSIGNED_SHORT
+    # Create VTK image data using the centralized utility function
+    vtk_image = create_vtk_image_from_volume(
+        ct_handler, center_at_origin=True, column_major=True
     )
 
-    # Set the VTK array as the image data's point data
-    vtk_image.GetPointData().SetScalars(vtk_array)
-
-    # Write the VTI file to memory
-    writer = vtk.vtkXMLImageDataWriter()
-    writer.SetInputData(vtk_image)
-    writer.SetDataModeToBinary()
-    writer.SetCompressorTypeToZLib()
-
-    # Write to memory instead of disk
-    writer.WriteToOutputStringOn()
-    writer.Update()
-
-    # Get the VTI data as string and encode it
-    vti_data = writer.GetOutputString()
-
-    # Convert to bytes if it's a string (needed for base64 encoding)
-    if isinstance(vti_data, str):
-        vti_data = vti_data.encode("utf-8")
+    # Write to VTI format
+    vti_data = write_vtk_image_to_vti(vtk_image)
 
     return Response(content=vti_data, media_type="application/octet-stream")
 
@@ -188,14 +137,14 @@ async def _process_multiframe_data(instances):
     if not instances or len(instances) == 0:
         raise HTTPException(status_code=404, detail="No instances found")
 
-    # For XA, we typically have one instance with multiple frames
-    # Let's get the first instance that has multiple frames
-    dcm_handler = None
-    for instance in instances:
-        dcm_handler = BaseDicomHandler(instance.get_pydicom())
-        if dcm_handler.number_of_frames > 1:
-            dcm_handler = dcm_handler
-            break
+    if len(instances) > 1:
+        raise HTTPException(
+            status_code=404,
+            detail="Multiple instances found in series",
+        )
+
+    instance = instances[0]
+    dcm_handler = BaseDicomHandler(instance.get_pydicom())
 
     if not dcm_handler:
         raise HTTPException(
@@ -203,17 +152,7 @@ async def _process_multiframe_data(instances):
             detail="No multi-frame instance found in series",
         )
 
-    # Get the number of frames
-    num_frames = dcm_handler.number_of_frames
-
-    # Get the dimensions of each frame
-    frame_shape = [dcm_handler.rows, dcm_handler.columns]
-
-    # Extract or calculate spacing
-    imager_pixel_spacing = dcm_handler.imager_pixel_spacing
-    spacing = [imager_pixel_spacing[0], imager_pixel_spacing[1], 1.0]
-
-    # Isocenter
+    # Create CArm object from the DICOM parameters
     alpha = dcm_handler.positioner_primary_angle
     beta = dcm_handler.positioner_secondary_angle
     carm = CArm(
@@ -221,64 +160,19 @@ async def _process_multiframe_data(instances):
         beta=beta,
         sid=dcm_handler.distance_source_to_detector,
         sod=dcm_handler.distance_source_to_patient,
-        imager_pixel_spacing=spacing,
+        imager_pixel_spacing=dcm_handler.imager_pixel_spacing,
         rows=dcm_handler.rows,
         columns=dcm_handler.columns,
         table_top_position=np.array([0, 0, 0]),
     )
     carm = CArmLPSAdapter(carm)
-    origin = carm.image_origin
-    rotation_matrix = carm.rotation
 
-    # Create a 3D volume from the frames
-    frames = dcm_handler.pixel_array
+    # Create VTK image data using the centralized utility function
+    vtk_image = create_vtk_image_from_multiframe(dcm_handler, carm, column_major=True)
 
-    # Create VTK image data
-    vtk_image = vtk.vtkImageData()
-    vtk_image.SetDimensions(frame_shape[1], frame_shape[0], num_frames)
-    vtk_image.SetSpacing(spacing)
-    vtk_image.SetOrigin(origin)
+    # Write to VTI format
+    vti_data = write_vtk_image_to_vti(vtk_image)
 
-    # Create vtkMatrix3x3 and populate it with rotation matrix values
-    # direction matrix 값이 같은데 vtk.js로 가면 반대로 나와서 transpose 적용
-    direction_matrix = rotation_matrix_to_vtk_direction_matrix(rotation_matrix.T)
-
-    # Set the direction matrix using the vtkMatrix3x3 object
-    vtk_image.SetDirectionMatrix(direction_matrix)
-
-    # Ensure data type compatibility with VTK
-    if frames.dtype != np.uint16 and frames.dtype != np.int16:
-        # Convert to uint16 for consistency
-        volume_flat = frames.reshape(-1).astype(np.uint16)
-    else:
-        volume_flat = frames.reshape(-1)
-
-    # Convert numpy array to VTK array
-    vtk_array = numpy_support.numpy_to_vtk(
-        volume_flat, deep=True, array_type=vtk.VTK_UNSIGNED_SHORT
-    )
-
-    # Set the VTK array as the image data's point data
-    vtk_image.GetPointData().SetScalars(vtk_array)
-
-    # Write the VTI file to memory
-    writer = vtk.vtkXMLImageDataWriter()
-    writer.SetInputData(vtk_image)
-    writer.SetDataModeToBinary()
-    writer.SetCompressorTypeToZLib()
-
-    # Write to memory instead of disk
-    writer.WriteToOutputStringOn()
-    writer.Update()
-
-    # Get the VTI data as string and encode it
-    vti_data = writer.GetOutputString()
-
-    # Convert to bytes if it's a string (needed for base64 encoding)
-    if isinstance(vti_data, str):
-        vti_data = vti_data.encode("utf-8")
-
-    # Return the VTI data with metadata
     return Response(content=vti_data, media_type="application/octet-stream")
 
 

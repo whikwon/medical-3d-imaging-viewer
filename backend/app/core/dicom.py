@@ -653,6 +653,12 @@ class VolumeDicomHandler:
     def voxel_array(self):
         """
         np.ndarray
+
+        (Z, Y, X) order
+
+        References
+        ----------
+        .. [1] https://discourse.vtk.org/t/numpy-tensor-to-vtkimagedata/5154/7
         """
         if "voxel_array" in self.identity_map:
             return self.identity_map["voxel_array"]
