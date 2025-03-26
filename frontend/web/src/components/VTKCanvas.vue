@@ -72,6 +72,17 @@
       >
         Show Controls
       </button>
+
+      <!-- Add MPR button -->
+      <button v-if="activeVolume" @click="openMPRViewport" class="mpr-btn">Open MPR View</button>
+
+      <!-- Add MPR viewport -->
+      <MPRViewport
+        v-if="showMPRViewport"
+        :image-data="mprImageData"
+        :window-width="windowWidth"
+        :window-center="windowCenter"
+      />
     </div>
   </div>
 </template>
@@ -102,6 +113,7 @@ import {
 } from '@/services/visualizationService'
 
 // Import all components
+import MPRViewport from '@/components/MPRViewport.vue'
 import MultiframeControls from '@/components/MultiframeControls.vue'
 import SeriesSelector from '@/components/SeriesSelector.vue'
 import VisualizationList from '@/components/VisualizationList.vue'
@@ -112,6 +124,7 @@ import { useVisualizationState } from '@/composables/useVisualizationState'
 import { useVTKInteractor } from '@/composables/useVTKInteractor'
 
 import type { Series } from '@/types/orthanc'
+import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData'
 
 // Refs for DOM elements
 const vtkContainer = ref<HTMLElement | null>(null)
@@ -158,6 +171,10 @@ const maxFrame = ref(0)
 const isPlaying = ref(false)
 const playbackSpeed = ref(15)
 let playbackInterval: number | null = null
+
+// Add new refs
+const showMPRViewport = ref(false)
+const mprImageData = ref<vtkImageData | null>(null)
 
 onMounted(async () => {
   // Initialize VTK.js
@@ -341,6 +358,26 @@ function playMultiframe() {
     }
   }
 }
+
+// Add type guard function
+function isVtkImageData(obj: unknown): obj is vtkImageData {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    'getDimensions' in obj &&
+    'getExtent' in obj &&
+    typeof (obj as vtkImageData).getDimensions === 'function' &&
+    typeof (obj as vtkImageData).getExtent === 'function'
+  )
+}
+
+// Add new method
+function openMPRViewport() {
+  if (activeVolume.value?.data && isVtkImageData(activeVolume.value.data)) {
+    mprImageData.value = activeVolume.value.data
+    showMPRViewport.value = true
+  }
+}
 </script>
 
 <style scoped>
@@ -403,5 +440,22 @@ function playMultiframe() {
 
 .show-controls-btn:hover {
   background-color: rgba(33, 150, 243, 1);
+}
+
+.mpr-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 8px 16px;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 100;
+}
+
+.mpr-btn:hover {
+  background-color: #1976d2;
 }
 </style>
