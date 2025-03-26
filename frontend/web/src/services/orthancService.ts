@@ -1,4 +1,15 @@
-import type { Series, Study } from '@/types/orthanc'
+import type { Patient, Series, Study } from '@/types/orthanc'
+
+/**
+ * Fetches a list of all patients from the Orthanc server
+ */
+export async function fetchPatients(): Promise<Patient[]> {
+  const response = await fetch('/api/orthanc/patients')
+  if (!response.ok) {
+    throw new Error(`Failed to fetch patients: ${response.statusText}`)
+  }
+  return response.json()
+}
 
 /**
  * Fetches a list of all studies from the Orthanc server
@@ -24,7 +35,7 @@ export async function fetchSeriesForStudy(studyId: string): Promise<Series[]> {
 }
 
 /**
- * Fetches the VTI data for a specific series from the Orthanc server
+ * Fetches series data from the Orthanc server
  * @param seriesId - The ID of the series to fetch data for
  */
 export async function fetchSeriesData(seriesId: string): Promise<{
@@ -37,17 +48,12 @@ export async function fetchSeriesData(seriesId: string): Promise<{
     throw new Error(`Failed to fetch series data: ${response.statusText}`)
   }
 
-  // Get window level information from headers
-  const windowWidth = response.headers.get('X-Window-Width')
-  const windowCenter = response.headers.get('X-Window-Center')
-
-  if (!windowWidth || !windowCenter) {
-    throw new Error('Window level information is missing from response headers')
-  }
+  const windowWidth = Number(response.headers.get('X-Window-Width') || '400')
+  const windowCenter = Number(response.headers.get('X-Window-Center') || '40')
 
   return {
     data: await response.blob(),
-    windowWidth: parseFloat(windowWidth),
-    windowCenter: parseFloat(windowCenter),
+    windowWidth,
+    windowCenter,
   }
 }

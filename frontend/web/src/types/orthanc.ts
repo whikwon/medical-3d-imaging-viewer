@@ -7,7 +7,19 @@ export interface DicomTags {
   SeriesDescription?: string
   SeriesNumber?: string
   Modality?: string
+  PatientID?: string
   [key: string]: string | undefined
+}
+
+export interface Patient {
+  ID: string
+  IsStable: boolean
+  LastUpdate: string
+  MainDicomTags: DicomTags
+  PatientMainDicomTags: DicomTags
+  Studies: string[]
+  StudiesCount: number
+  Type: string
 }
 
 export interface Study {

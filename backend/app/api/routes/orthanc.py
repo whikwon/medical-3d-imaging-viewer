@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 @router.get("/patients")
 async def get_patients(query: dict[str, Any] = None, labels: list[str] | str = None):
     """Get all patients from Orthanc."""
-    return find_patients(orthanc_client.client, query, labels)
+    patients = find_patients(orthanc_client.client, query, labels)
+    return [patient.get_main_information() for patient in patients]
 
 
 @router.get("/studies")

@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import VTKCanvas from './components/VTKCanvas.vue'
-
-onMounted(async () => {})
+// No setup needed
 </script>
 
 <template>
-  <div>
-    <VTKCanvas />
-  </div>
+  <router-view></router-view>
 </template>
 
-<style scoped></style>
+<style>
+/* Global styles */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+  width: 100vw;
+}
+</style>
