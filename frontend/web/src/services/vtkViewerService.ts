@@ -1,6 +1,7 @@
 import '@kitware/vtk.js/Rendering/Misc/RenderingAPIs'
 
 import type { Viewport, VTKViewerInstance } from '@/types/visualization'
+
 import vtkInteractorStyleImage from '@kitware/vtk.js/Interaction/Style/InteractorStyleImage'
 import vtkInteractorStyleTrackballCamera from '@kitware/vtk.js/Interaction/Style/InteractorStyleTrackballCamera'
 import vtkOrientationMarkerWidget from '@kitware/vtk.js/Interaction/Widgets/OrientationMarkerWidget'
@@ -26,7 +27,7 @@ interface AxesConfig {
 export function initializeViewer(rootContainer: HTMLElement): VTKViewerInstance {
   // https://kitware.github.io/vtk-js/examples/QuadView.html
   const renderWindow = vtkRenderWindow.newInstance()
-  const renderWindowView = renderWindow.newAPISpecificView()
+  const renderWindowView = renderWindow.newAPISpecificView('WebGL')
   const rect = rootContainer.getBoundingClientRect()
   renderWindowView.setSize(rect.width, rect.height)
   renderWindow.addView(renderWindowView)
@@ -38,17 +39,16 @@ export function initializeViewer(rootContainer: HTMLElement): VTKViewerInstance 
   interactor.initialize()
 
   // Create interactor styles
-  const imageStyle = vtkInteractorStyleImage.newInstance()
-  const trackballStyle = vtkInteractorStyleTrackballCamera.newInstance()
-  interactor.setInteractorStyle(trackballStyle)
+  const trackballInteractorStyle = vtkInteractorStyleTrackballCamera.newInstance()
+  const imageInteractorStyle = vtkInteractorStyleImage.newInstance()
 
   // Return all the created objects
   return {
     renderWindow,
     interactor,
     rootContainer,
-    imageStyle,
-    trackballStyle,
+    imageInteractorStyle,
+    trackballInteractorStyle,
   }
 }
 
@@ -67,11 +67,10 @@ export function createViewport(
   interactorStyle: vtkInteractorStyleImage | vtkInteractorStyleTrackballCamera,
 ): Viewport {
   // Create renderer
-  const renderer = vtkRenderer.newInstance({})
+  const renderer = vtkRenderer.newInstance()
   renderer.setBackground(0.1, 0.1, 0.1)
-  renderer.setViewport(viewport)
+  renderer.setViewport(...viewport)
 
-  // Create container
   const container = document.createElement('div')
   container.style.position = 'absolute'
   container.style.width = `${(viewport[2] - viewport[0]) * 100}%`
@@ -83,8 +82,9 @@ export function createViewport(
   renderWindow.addRenderer(renderer)
 
   container.addEventListener('pointerenter', () => {
-    if (interactor.getContainer() !== container) {
-      if (interactor.getContainer()) {
+    const interactorContainer = interactor.getContainer()
+    if (interactorContainer !== container) {
+      if (interactorContainer) {
         interactor.unbindEvents()
       }
       interactor.setInteractorStyle(interactorStyle)
@@ -93,6 +93,82 @@ export function createViewport(
   })
 
   return { renderer, container, viewport }
+}
+
+/**
+ * Creates multiple viewports for MPR (Multiplanar Reconstruction)
+ * @param renderWindow - The VTK render window
+ * @param rootContainer - The root container element
+ * @param layout - Layout type (e.g., '2x2', '1x3')
+ * @returns Array of viewport objects
+ */
+export function createMPRViewports(
+  renderWindow: vtkRenderWindow,
+  rootContainer: HTMLElement,
+  interactor: vtkRenderWindowInteractor,
+  imageInteractorStyle: vtkInteractorStyleImage,
+  trackballInteractorStyle: vtkInteractorStyleTrackballCamera,
+): Viewport[] {
+  const viewports: Viewport[] = []
+
+  // Clear existing container styles temporarily
+  const originalPosition = rootContainer.style.position
+  rootContainer.style.position = 'relative'
+
+  viewports.push(
+    createViewport(renderWindow, rootContainer, [0, 0.5, 0.5, 1], interactor, imageInteractorStyle),
+  ) // Top left
+  viewports.push(
+    createViewport(renderWindow, rootContainer, [0.5, 0.5, 1, 1], interactor, imageInteractorStyle),
+  ) // Top right
+  viewports.push(
+    createViewport(renderWindow, rootContainer, [0, 0, 0.5, 0.5], interactor, imageInteractorStyle),
+  ) // Bottom left
+  viewports.push(
+    createViewport(
+      renderWindow,
+      rootContainer,
+      [0.5, 0, 1, 0.5],
+      interactor,
+      trackballInteractorStyle,
+    ),
+  ) // Bottom right
+
+  // Restore original position style
+  rootContainer.style.position = originalPosition
+
+  return viewports
+}
+
+/**
+ * Cleans up a specific viewport without destroying the render window
+ * @param viewport - The viewport to clean up
+ * @param renderWindow - The VTK render window
+ * @param interactor - The VTK interactor
+ */
+export function cleanupViewport(
+  viewport: Viewport,
+  renderWindow: vtkRenderWindow,
+  interactor: vtkRenderWindowInteractor,
+): void {
+  const interactorContainer = interactor.getContainer()
+  // If the viewport has interactor-related references, unbind events
+  if (viewport.container && interactorContainer) {
+    if (interactorContainer !== viewport.container) {
+      interactor.unbindEvents()
+    }
+  }
+
+  // Remove the container from DOM
+  if (viewport.container && viewport.container.parentNode) {
+    viewport.container.parentNode.removeChild(viewport.container)
+  }
+
+  // Remove the renderer from the render window and delete it
+  if (viewport.renderer) {
+    renderWindow.removeRenderer(viewport.renderer)
+    viewport.renderer.delete()
+  }
 }
 
 /**

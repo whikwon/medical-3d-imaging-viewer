@@ -42,6 +42,6 @@ export interface VTKViewerInstance {
   renderWindow: vtkRenderWindow
   interactor: vtkRenderWindowInteractor
   rootContainer: HTMLElement
-  imageStyle: vtkInteractorStyleImage
-  trackballStyle: vtkInteractorStyleTrackballCamera
+  imageInteractorStyle: vtkInteractorStyleImage
+  trackballInteractorStyle: vtkInteractorStyleTrackballCamera
 }

@@ -74,14 +74,15 @@
       <button v-if="activeVolume" @click="openMPRViewport" class="mpr-btn">Open MPR View</button>
 
       <!-- Add MPR viewport with non-nullable check -->
-      <!-- <MPRViewport
+      <MPRViewport
         v-if="showMPRViewport && mprImageData && vtkInstance"
         :image-data="mprImageData"
         :window-width="windowWidth"
         :window-center="windowCenter"
         :vtk-instance="vtkInstance"
+        :mpr-viewports="mprViewports"
         @close="closeMPRViewport"
-      /> -->
+      />
     </div>
   </div>
 </template>
@@ -98,6 +99,8 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 // Import our services and types
 import {
   cleanupViewer,
+  cleanupViewport,
+  createMPRViewports,
   createViewport,
   initializeViewer,
   setupAxesActor,
@@ -112,6 +115,7 @@ import {
 } from '@/services/visualizationService'
 
 // Import all components
+import MPRViewport from '@/components/MPRViewport.vue'
 import MultiframeControls from '@/components/MultiframeControls.vue'
 import SidePanel from '@/components/SidePanel.vue'
 import VolumeControls from '@/components/VolumeControls.vue'
@@ -192,9 +196,10 @@ const {
   cleanup: cleanupControlPanel,
 } = useControlPanelState(vtkInstance)
 
-// Add new refs
+// Add new refs for MPR functionality
 const showMPRViewport = ref(false)
 const mprImageData = ref<vtkImageData | null>(null)
+const mprViewports = ref<Viewport[]>([])
 
 onMounted(async () => {
   // Initialize VTK.js
@@ -205,7 +210,7 @@ onMounted(async () => {
       vtkInstance.value.rootContainer,
       [0, 0, 1, 1],
       vtkInstance.value.interactor,
-      vtkInstance.value.trackballStyle,
+      vtkInstance.value.trackballInteractorStyle,
     )
     setupAxesActor(initialViewport.value.renderer)
     setupOrientationWidget(vtkInstance.value.interactor)
@@ -379,12 +384,68 @@ function playMultiframeUI() {
   }
 }
 
-// Update openMPRViewport function
+// Update openMPRViewport function to use the shared window approach
 function openMPRViewport() {
-  if (activeVolume.value?.data) {
+  if (activeVolume.value?.data && vtkInstance.value) {
+    // Store the image data for the MPR viewport
     mprImageData.value = activeVolume.value.data
+
+    // Hide the main viewport temporarily (could also use CSS to adjust the layout)
+    if (initialViewport.value?.container) {
+      initialViewport.value.container.style.display = 'none'
+    }
+
+    // Create MPR viewports using the existing render window
+    mprViewports.value = createMPRViewports(
+      vtkInstance.value.renderWindow,
+      vtkInstance.value.rootContainer,
+      vtkInstance.value.interactor,
+      vtkInstance.value.imageInteractorStyle,
+      vtkInstance.value.trackballInteractorStyle,
+    )
+
+    // Show the MPR viewport
     showMPRViewport.value = true
+
+    // Force a render
+    if (vtkInstance.value.renderWindow) {
+      vtkInstance.value.renderWindow.render()
+    }
   }
+}
+
+// Add a function to close the MPR viewport
+function closeMPRViewport() {
+  // Hide the MPR viewport
+  showMPRViewport.value = false
+
+  // Clean up MPR viewports
+  if (vtkInstance.value && mprViewports.value.length > 0) {
+    mprViewports.value.forEach((viewport) => {
+      cleanupViewport(viewport, vtkInstance.value!.renderWindow, vtkInstance.value!.interactor)
+    })
+    mprViewports.value = []
+  }
+
+  // Reset the mprImageData reference to avoid memory leaks
+  mprImageData.value = null
+
+  // Show the main viewport again
+  if (initialViewport.value?.container) {
+    initialViewport.value.container.style.display = 'block'
+  }
+
+  // Reset view if there's an active visualization
+  if (activeVolume.value && activeVolume.value.viewport?.renderer) {
+    activeVolume.value.viewport.renderer.resetCamera()
+  }
+
+  // Force a render with a slight delay to ensure all cleanups are complete
+  setTimeout(() => {
+    if (vtkInstance.value?.renderWindow) {
+      vtkInstance.value.renderWindow.render()
+    }
+  }, 50)
 }
 
 // Patient selection function
