@@ -114,7 +114,7 @@ def create_vtk_image_from_multiframe(
     num_frames = dcm_handler.number_of_frames
     frame_shape = [dcm_handler.rows, dcm_handler.columns]
     imager_pixel_spacing = dcm_handler.imager_pixel_spacing
-    spacing = [imager_pixel_spacing[0], imager_pixel_spacing[1], 1.0]
+    spacing = [imager_pixel_spacing[0], imager_pixel_spacing[1], 0.0]
 
     # Get frames
     frames = dcm_handler.pixel_array

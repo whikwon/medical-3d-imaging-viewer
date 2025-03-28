@@ -7,6 +7,7 @@
       <div ref="coronalView" class="coronal-view"></div>
       <div ref="sagittalView" class="sagittal-view"></div>
       <div ref="volumeView" class="volume-view"></div>
+      <button @click="$emit('close')" class="close-button">×</button>
     </div>
     <div class="button-container">
       <button @click="resetView" class="action-button">Reset View</button>
@@ -45,7 +46,7 @@ import {
 import type { VtkObject } from '@/types/visualization'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-function createRGBStringFromRGBValues(rgb) {
+function createRGBStringFromRGBValues(rgb: number[]) {
   if (rgb.length !== 3) {
     return 'rgb(0, 0, 0)'
   }
@@ -77,7 +78,7 @@ const viewColors = [
 ]
 
 interface InteractionContext {
-  viewType: string // Using string for now as VTK.js types are not fully exposed
+  viewType: string
   reslice: vtkImageReslice
   actor: vtkImageSlice
   renderer: vtkRenderer
@@ -91,6 +92,7 @@ const props = defineProps<{
   imageData: VtkObject
   windowWidth: number
   windowCenter: number
+  vtkInstance: any // VTK instance from parent
 }>()
 
 // Refs for view containers
@@ -202,7 +204,7 @@ onMounted(() => {
     obj.resliceActor = vtkImageSlice.newInstance()
     obj.resliceActor.setMapper(obj.resliceMapper)
 
-    // Apply window level settings
+    // Apply initial window level settings from props
     const property = obj.resliceActor.getProperty()
     property.setColorLevel(props.windowCenter)
     property.setColorWindow(props.windowWidth)
@@ -226,7 +228,7 @@ onMounted(() => {
       view3D = obj
     }
 
-    // Setup orientation widget
+    // Setup orientation widget with the specific interactor
     const axes = vtkAnnotatedCubeActor.newInstance()
     axes.setDefaultStyle({
       text: '+X',
@@ -283,10 +285,14 @@ onMounted(() => {
     viewAttributes.value.forEach((obj, i) => {
       obj.reslice.setInputData(props.imageData)
       obj.renderer.addActor(obj.resliceActor)
-      view3D.renderer.addActor(obj.resliceActor)
+      if (view3D) {
+        view3D.renderer.addActor(obj.resliceActor)
+      }
       obj.sphereActors.forEach((actor) => {
         obj.renderer.addActor(actor)
-        view3D.renderer.addActor(actor)
+        if (view3D) {
+          view3D.renderer.addActor(actor)
+        }
       })
 
       const reslice = obj.reslice
@@ -333,8 +339,10 @@ onMounted(() => {
       obj.interactor.render()
     })
 
-    view3D.renderer.resetCamera()
-    view3D.renderer.resetCameraClippingRange()
+    if (view3D) {
+      view3D.renderer.resetCamera()
+      view3D.renderer.resetCameraClippingRange()
+    }
 
     // Set max slices
     const dimensions = props.imageData.getDimensions()
@@ -400,6 +408,10 @@ function resetView() {
   view3D.renderer.resetCamera()
   view3D.renderer.resetCameraClippingRange()
 }
+
+defineEmits<{
+  (e: 'close'): void
+}>()
 </script>
 
 <style scoped>
@@ -458,5 +470,28 @@ function resetView() {
 
 .action-button:hover {
   background-color: #45a049;
+}
+
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+  transition: background-color 0.2s;
+}
+
+.close-button:hover {
+  background-color: rgba(0, 0, 0, 0.7);
 }
 </style>

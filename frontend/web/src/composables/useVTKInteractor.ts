@@ -1,26 +1,49 @@
 import vtkSphereSource from '@kitware/vtk.js/Filters/Sources/SphereSource'
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor'
+import type { Camera } from '@kitware/vtk.js/Rendering/Core/Camera'
 import vtkCellPicker from '@kitware/vtk.js/Rendering/Core/CellPicker'
 import vtkCoordinate from '@kitware/vtk.js/Rendering/Core/Coordinate'
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper'
 import { onBeforeUnmount, ref, type Ref } from 'vue'
 
-import type { VTKViewerInstance } from '@/services/vtkViewerService'
-import type { Visualization } from '@/types/visualization'; // Ensure this path is correct
+import type { Visualization, VTKViewerInstance } from '@/types/visualization'
 
-export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) {
-  const sphereActor = ref<any>(null)
+// Define types for event objects
+interface InteractionEvent {
+  position: {
+    x: number
+    y: number
+  }
+}
+
+// Define type for vtk actor with position methods
+interface VTKActor {
+  getPosition(): number[]
+  setPosition(x: number, y: number, z: number): void
+  getProperty(): {
+    setColor(r: number, g: number, b: number): void
+  }
+}
+
+export function useVTKInteractor(vtkInstance: Ref<VTKViewerInstance | null>) {
+  const sphereActor = ref<VTKActor | null>(null)
   const lastPosition = ref<number[] | null>(null)
   const coordinate = ref<any>(null)
+  const activeVisualizationRef = ref<Visualization | null>(null)
 
-  function setupInteraction(activeVisualization: Visualization | null) {
-    const vtkInstance = vtkInstanceRef.value
-    if (!vtkInstance) return
+  function setupInteraction(activeVisualization: Visualization) {
+    // Store active visualization reference
+    activeVisualizationRef.value = activeVisualization
+
+    if (!vtkInstance.value || !activeVisualization) return
 
     // Clean up previous actors if they exist
     cleanupInteraction()
 
-    const { renderer, renderWindow, interactor } = vtkInstance
+    const renderer = activeVisualization.viewport?.renderer
+    if (!renderer) return
+
+    const { renderWindow, interactor } = vtkInstance.value
 
     // Create sphere source
     const sphereSource = vtkSphereSource.newInstance({
@@ -54,14 +77,14 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
     coord.setCoordinateSystemToDisplay()
 
     // Store references
-    sphereActor.value = actor
+    sphereActor.value = actor as VTKActor
     coordinate.value = coord
 
     // Add actor to renderer
     renderer.addActor(actor)
 
     // Set up interaction handlers
-    interactor.onLeftButtonPress((event: any) => {
+    interactor.onLeftButtonPress((event: InteractionEvent) => {
       const displayPosition = [event.position.x, event.position.y, 0]
       picker.pick(displayPosition, renderer)
       if (picker.getActors().length > 0) {
@@ -70,10 +93,10 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
       }
     })
 
-    interactor.onRightButtonPress((event: any) => {
+    interactor.onRightButtonPress((event: InteractionEvent) => {
       if (!lastPosition.value || !coordinate.value || !renderer) return
 
-      const camera = renderer.getActiveCamera()
+      const camera = renderer.getActiveCamera() as Camera
       const planeNormal = camera.getDirectionOfProjection()
       const planePoint = lastPosition.value
 
@@ -123,7 +146,7 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
 
       // Move all actors in the current visualization
       if (activeVisualization) {
-        activeVisualization.actors.forEach((actor: any) => {
+        activeVisualization.actors.forEach((actor) => {
           const currentPos = actor.getPosition()
           actor.setPosition(
             currentPos[0] + translation[0],
@@ -134,12 +157,14 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
       }
 
       // Move the sphere along with the images
-      const currentSpherePos = actor.getPosition()
-      actor.setPosition(
-        currentSpherePos[0] + translation[0],
-        currentSpherePos[1] + translation[1],
-        currentSpherePos[2] + translation[2],
-      )
+      if (sphereActor.value) {
+        const currentSpherePos = sphereActor.value.getPosition()
+        sphereActor.value.setPosition(
+          currentSpherePos[0] + translation[0],
+          currentSpherePos[1] + translation[1],
+          currentSpherePos[2] + translation[2],
+        )
+      }
 
       lastPosition.value = currentPosition
       renderWindow.render()
@@ -149,9 +174,8 @@ export function useVTKInteractor(vtkInstanceRef: Ref<VTKViewerInstance | null>) 
   }
 
   function cleanupInteraction() {
-    const vtkInstance = vtkInstanceRef.value
-    if (sphereActor.value && vtkInstance?.renderer) {
-      vtkInstance.renderer.removeActor(sphereActor.value)
+    if (sphereActor.value && activeVisualizationRef.value?.viewport?.renderer) {
+      activeVisualizationRef.value.viewport.renderer.removeActor(sphereActor.value)
       sphereActor.value = null
     }
     lastPosition.value = null

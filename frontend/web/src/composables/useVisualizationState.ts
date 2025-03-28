@@ -1,13 +1,12 @@
 import { removeVisualization, setVisualizationVisibility } from '@/services/visualizationService'
 import type { VTKViewerInstance } from '@/services/vtkViewerService'
 import type { Visualization } from '@/types/visualization'
-import type { Ref } from 'vue'
 import { computed, ref } from 'vue'
 
 /**
  * Composable for managing visualization state
  */
-export function useVisualizationState(vtkInstance: Ref<VTKViewerInstance | null>) {
+export function useVisualizationState(vtkInstance: VTKViewerInstance | null) {
   // Visualizations array
   const visualizations = ref<Visualization[]>([])
   const activeVisualizationIndex = ref(-1)
@@ -47,7 +46,7 @@ export function useVisualizationState(vtkInstance: Ref<VTKViewerInstance | null>
 
   function toggleVisibility(index: number): void {
     const vis = visualizations.value[index]
-    const instance = vtkInstance.value
+    const instance = vtkInstance
 
     if (!vis || !instance) return
 
@@ -60,7 +59,7 @@ export function useVisualizationState(vtkInstance: Ref<VTKViewerInstance | null>
   }
 
   function removeVisualizationById(index: number): void {
-    const instance = vtkInstance.value
+    const instance = vtkInstance
     if (!instance) return
 
     const vis = visualizations.value[index]

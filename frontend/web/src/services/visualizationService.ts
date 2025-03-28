@@ -2,13 +2,28 @@ import vtkXMLImageDataReader from '@kitware/vtk.js/IO/XML/XMLImageDataReader'
 import vtkImageMapper from '@kitware/vtk.js/Rendering/Core/ImageMapper'
 import vtkImageSlice from '@kitware/vtk.js/Rendering/Core/ImageSlice'
 
-import type { VTKViewerInstance } from '@/services/vtkViewerService'
 import type { Series } from '@/types/orthanc'
 import type { Visualization } from '@/types/visualization'
+import type vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer'
+
+interface VolumeControlParams {
+  iExtentMin: number
+  iExtentMax: number
+  jExtentMin: number
+  jExtentMax: number
+  kExtentMin: number
+  kExtentMax: number
+  iSlice: number
+  jSlice: number
+  kSlice: number
+  windowCenterMin: number
+  windowCenterMax: number
+  windowWidthMax: number
+}
 
 /**
  * Loads a CT volume visualization
- * @param vtkInstance - The VTK viewer instance
+ * @param renderer - The renderer to add the actors to
  * @param seriesId - Orthanc series ID
  * @param series - Series metadata
  * @param vtiData - The VTI blob data
@@ -17,7 +32,7 @@ import type { Visualization } from '@/types/visualization'
  * @returns Visualization metadata and control values
  */
 export async function loadVolumeVisualization(
-  vtkInstance: VTKViewerInstance,
+  renderer: vtkRenderer,
   seriesId: string,
   series: Series,
   vtiData: Blob,
@@ -25,23 +40,9 @@ export async function loadVolumeVisualization(
   windowCenter: number,
 ): Promise<{
   visualization: Visualization
-  controlValues: {
-    iExtentMin: number
-    iExtentMax: number
-    jExtentMin: number
-    jExtentMax: number
-    kExtentMin: number
-    kExtentMax: number
-    iSlice: number
-    jSlice: number
-    kSlice: number
-    windowCenterMin: number
-    windowCenterMax: number
-    windowWidthMax: number
-  }
+  controlParams: VolumeControlParams
 }> {
-  const { renderer } = vtkInstance
-
+  // Use the first viewport's renderer
   const reader = vtkXMLImageDataReader.newInstance()
   const url = URL.createObjectURL(vtiData)
 
@@ -89,11 +90,9 @@ export async function loadVolumeVisualization(
     actorK.getProperty().setColorWindow(windowWidth)
 
     // Add actors to renderer
-    if (renderer) {
-      renderer.addActor(actorI)
-      renderer.addActor(actorJ)
-      renderer.addActor(actorK)
-    }
+    renderer.addActor(actorI)
+    renderer.addActor(actorJ)
+    renderer.addActor(actorK)
 
     // Create the visualization object
     const visualization: Visualization = {
@@ -108,7 +107,7 @@ export async function loadVolumeVisualization(
     // Return data including control values
     return {
       visualization,
-      controlValues: {
+      controlParams: {
         iExtentMin: extent[0],
         iExtentMax: extent[1],
         jExtentMin: extent[2],
@@ -129,9 +128,16 @@ export async function loadVolumeVisualization(
   }
 }
 
+interface MultiframeControlParams {
+  maxFrame: number
+  windowCenterMin: number
+  windowCenterMax: number
+  windowWidthMax: number
+}
+
 /**
  * Loads a multiframe visualization (like XA series)
- * @param vtkInstance - The VTK viewer instance
+ * @param renderer - The renderer to add the actors to
  * @param seriesId - Orthanc series ID
  * @param series - Series metadata
  * @param vtiData - The VTI blob data
@@ -140,7 +146,7 @@ export async function loadVolumeVisualization(
  * @returns Visualization metadata and control values
  */
 export async function loadMultiframeVisualization(
-  vtkInstance: VTKViewerInstance,
+  renderer: vtkRenderer,
   seriesId: string,
   series: Series,
   vtiData: Blob,
@@ -148,15 +154,8 @@ export async function loadMultiframeVisualization(
   windowCenter: number,
 ): Promise<{
   visualization: Visualization
-  controlValues: {
-    maxFrame: number
-    windowCenterMin: number
-    windowCenterMax: number
-    windowWidthMax: number
-  }
+  controlParams: MultiframeControlParams
 }> {
-  const { renderer } = vtkInstance
-
   const reader = vtkXMLImageDataReader.newInstance()
   const url = URL.createObjectURL(vtiData)
 
@@ -183,9 +182,7 @@ export async function loadMultiframeVisualization(
     actor.getProperty().setColorWindow(windowWidth)
 
     // Add actor to renderer
-    if (renderer) {
-      renderer.addActor(actor)
-    }
+    renderer.addActor(actor)
 
     // Create a visualization record
     const visualization: Visualization = {
@@ -199,7 +196,7 @@ export async function loadMultiframeVisualization(
 
     return {
       visualization,
-      controlValues: {
+      controlParams: {
         maxFrame: numFrames - 1,
         // Calculate window level controls from data range, same as volume visualization
         windowCenterMin: Math.floor(dataRange[0]),
@@ -286,17 +283,10 @@ export function setVisualizationVisibility(visualization: Visualization, visible
 
 /**
  * Removes a visualization from the renderer
- * @param vtkInstance - The VTK viewer instance
+ * @param renderer - The renderer to remove the actors from
  * @param visualization - The visualization to remove
  */
-export function removeVisualization(
-  vtkInstance: VTKViewerInstance,
-  visualization: Visualization,
-): void {
-  const { renderer } = vtkInstance
-
-  if (!renderer) return
-
+export function removeVisualization(renderer: vtkRenderer, visualization: Visualization): void {
   // Remove all actors from renderer
   visualization.actors.forEach((actor) => {
     renderer.removeActor(actor)

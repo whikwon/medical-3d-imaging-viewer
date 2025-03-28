@@ -43,3 +43,7 @@ npm run test:unit
 ```sh
 npm run lint
 ```
+
+## Resources
+
+- ## https://discourse.vtk.org/t/why-im-having-this-warning-too-many-active-webgl-contexts-oldest-context-will-be-lost/10670/4

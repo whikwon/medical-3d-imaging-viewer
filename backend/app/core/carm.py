@@ -64,7 +64,7 @@ class CArm:
         self.rows = rows
         self.columns = columns
         self.sod = sod
-        self.table_top_position = table_top_position  # relative position
+        self.table_top_position = table_top_position  # relative position, ILA
         if sisod is None:
             self.sisod = sod
         else:

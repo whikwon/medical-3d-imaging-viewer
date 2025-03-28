@@ -168,6 +168,7 @@ async def _process_multiframe_data(instances):
     # Create CArm object from the DICOM parameters
     alpha = dcm_handler.positioner_primary_angle
     beta = dcm_handler.positioner_secondary_angle
+    # dcm_handler.table_top_position is in LPS, but the CArm constructor expects ILA
     carm = CArm(
         alpha=alpha,
         beta=beta,
