@@ -1,4 +1,5 @@
 import secrets
+from pathlib import Path
 from typing import Annotated, Any, Literal, Optional
 
 from pydantic import AnyUrl, BeforeValidator, computed_field
@@ -52,6 +53,9 @@ class Settings(BaseSettings):
     ORTHANC_URL: str = "http://localhost:8042"
     ORTHANC_USERNAME: Optional[str] = None
     ORTHANC_PASSWORD: Optional[str] = None
+
+    # Label directory
+    LABEL_DIR_PATH: Path = Path(__file__).parent.parent.parent.parent / "data" / "label"
 
 
 settings = Settings()  # type: ignore

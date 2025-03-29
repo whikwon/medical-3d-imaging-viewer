@@ -10,10 +10,12 @@
       :active-series-id="activeSeriesId"
       :loading-series-id="loadingSeriesId"
       @select-visualization="selectVisualization"
-      @toggle-visibility="toggleVisibility"
+      @toggle-visibility="handleToggleVisibility"
       @remove-visualization="removeVisualizationById"
       @select-patient="selectPatient"
       @select-series="loadSeries"
+      @select-label="handleLabelSelection"
+      @deselect-label="handleLabelDeselection"
     />
 
     <!-- Visualization Area -->
@@ -128,6 +130,15 @@ import { useVTKInteractor } from '@/composables/useVTKInteractor'
 import { fetchSeriesData } from '@/services/orthancService'
 import type { Patient, Series } from '@/types/orthanc'
 import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData'
+
+// Import our new label service
+import {
+  drawCenterline,
+  drawLabelsForVisualization,
+  removeLabel,
+  updateLabelsVisibility,
+} from '@/services/labelService'
+import type { Label } from '@/types/visualization'
 
 // Refs for DOM elements
 const vtkContainer = ref<HTMLElement | null>(null)
@@ -294,6 +305,11 @@ async function handleSeriesLoaded(
 
       // Apply window level settings to the visualization
       updateWindowLevel(result.visualization)
+
+      // If the visualization has labels, draw them
+      if (result.visualization.labels && result.visualization.labels.length > 0) {
+        drawLabelsForVisualization(result.visualization)
+      }
     } else if (series.MainDicomTags.Modality === 'CT') {
       // Load volume visualization
       const result = await loadVolumeVisualization(
@@ -331,6 +347,11 @@ async function handleSeriesLoaded(
 
       // Apply window level settings to the visualization
       updateWindowLevel(result.visualization)
+
+      // If the visualization has labels, draw them
+      if (result.visualization.labels && result.visualization.labels.length > 0) {
+        drawLabelsForVisualization(result.visualization)
+      }
     } else {
       throw new Error(`Unsupported modality: ${series.MainDicomTags.Modality}`)
     }
@@ -462,10 +483,76 @@ function selectVisualization(index: number) {
   if (vtkInstance.value.renderWindow) {
     const selectedVis = visualizations.value[index]
     setupInteraction(selectedVis)
+
+    // Draw any labels that exist for this visualization
+    if (selectedVis.labels && selectedVis.labels.length > 0) {
+      drawLabelsForVisualization(selectedVis)
+    }
+
     if (selectedVis.viewport?.renderer) {
       selectedVis.viewport.renderer.resetCamera()
       vtkInstance.value.renderWindow.render()
     }
+  }
+}
+
+// Add handlers for label selection and deselection
+function handleLabelSelection(label: Label, seriesId: string) {
+  if (!vtkInstance.value || !initialViewport.value?.renderer) return
+
+  // Find the visualization for this series
+  const visualization = visualizations.value.find((v) => v.seriesId === seriesId)
+  if (!visualization || !visualization.viewport) return
+
+  // Draw the label based on its type
+  console.log('label.type', label.type)
+  try {
+    if (label.type === 'centerline') {
+      drawCenterline(visualization.viewport.renderer, label)
+    }
+    // Add support for other label types here as needed
+
+    // Render to show the new label
+    if (vtkInstance.value.renderWindow) {
+      vtkInstance.value.renderWindow.render()
+    }
+  } catch (error) {
+    console.error('Error drawing label:', error)
+  }
+}
+
+function handleLabelDeselection(labelId: string, seriesId: string) {
+  if (!vtkInstance.value) return
+
+  // Find the visualization for this series
+  const visualization = visualizations.value.find((v) => v.seriesId === seriesId)
+  if (!visualization || !visualization.viewport || !visualization.viewport.renderer) return
+
+  // Find the label by ID or filename
+  const label = visualization.labels?.find((l) => l.id === labelId || l.filename === labelId)
+  if (!label) return
+
+  // Remove the label from the renderer
+  removeLabel(visualization.viewport.renderer, label)
+
+  // Render to update the view
+  if (vtkInstance.value.renderWindow) {
+    vtkInstance.value.renderWindow.render()
+  }
+}
+
+// Update toggleVisibility function to handle label visibility
+function handleToggleVisibility(index: number) {
+  if (!vtkInstance.value || !vtkInstance.value.renderWindow) return
+
+  // Call the original toggleVisibility from the composable
+  toggleVisibility(index) // This toggles the visibility state
+
+  // Update label visibility based on parent visualization
+  const vis = visualizations.value[index]
+  if (vis.labels && vis.labels.length > 0) {
+    updateLabelsVisibility(vis)
+    vtkInstance.value.renderWindow.render()
   }
 }
 </script>

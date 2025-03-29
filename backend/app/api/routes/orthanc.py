@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pyorthanc import (
     Instance,
     Series,
@@ -19,9 +19,11 @@ from pyorthanc import (
 )
 
 from app.core.carm import CArm, CArmLPSAdapter
+from app.core.config import settings
 from app.core.dicom import BaseDicomHandler, VolumeDicomHandler
 from app.core.intensity_transform import compute_optimal_window_level
 from app.core.orthanc import orthanc_client
+from app.core.slicer_parser import SlicerMarkupsMrkJson
 from app.core.vtk_utils import (
     create_vtk_image_from_multiframe,
     create_vtk_image_from_volume,
@@ -112,6 +114,95 @@ async def get_series_data(series_id: str):
         return await _process_volume_data(instances)
 
 
+@router.get("/series/{series_id}/label_list")
+async def get_series_label_list(series_id: str):
+    """Get the list of available label filenames for a series."""
+    try:
+        series = Series(series_id, orthanc_client.client)
+        series_info = series.get_main_information()
+        series_uid = series_info.get("MainDicomTags", {}).get("SeriesInstanceUID")
+
+        if not series_uid:
+            raise HTTPException(
+                status_code=404,
+                detail="Could not find Study or Series UID for the series.",
+            )
+
+        # Construct the expected directory path for labels for this series
+        # Assumes structure: settings.LABEL_DIR_PATH / study_uid / series_uid / *.mrk.json (or other extensions)
+        series_label_dir = settings.LABEL_DIR_PATH / series_uid
+        logger.info(f"Searching for labels in: {series_label_dir}")
+
+        if not series_label_dir.is_dir():
+            logger.warning(f"Label directory not found: {series_label_dir}")
+            return []  # Return empty list if directory doesn't exist
+
+        # Return the full paths as strings
+        label_files = [str(p) for p in series_label_dir.glob("*") if p.is_file()]
+        return label_files
+
+    except Exception as e:
+        logger.error(f"Failed to get label list for series {series_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve label list: {str(e)}",
+        )
+
+
+@router.get("/series/{series_id}/labels/{label_filename}")
+async def get_series_label_content(series_id: str, label_filename: str):
+    """Get the content of a specific label file for a series."""
+    try:
+        series = Series(series_id, orthanc_client.client)
+        series_info = series.get_main_information()
+        # Use DICOM UIDs for robust path construction
+        series_uid = series_info.get("MainDicomTags", {}).get("SeriesInstanceUID")
+
+        if not series_uid:
+            raise HTTPException(
+                status_code=404,
+                detail="Could not find Study or Series UID for the series.",
+            )
+
+        # Construct the full path to the specific label file
+        label_file_path = settings.LABEL_DIR_PATH / series_uid / label_filename
+        logger.info(f"Attempting to read label file: {label_file_path}")
+
+        if not label_file_path.is_file():
+            logger.error(f"Label file not found: {label_file_path}")
+            raise HTTPException(
+                status_code=404, detail=f"Label file '{label_filename}' not found."
+            )
+
+        # Assuming .mrk.json files are JSON, read and return as JSON
+        # Add handling for other file types if necessary
+        if (
+            label_file_path.suffix.lower() == ".json"
+            or label_file_path.suffix.lower() == ".mrk"
+        ):  # Handle .mrk.json too if needed
+            label = SlicerMarkupsMrkJson(label_file_path)
+            centerline = label.control_points.tolist()
+            return JSONResponse(content=centerline)
+        else:
+            # For non-JSON files, you might return differently, e.g., FileResponse
+            # For now, raise an error if it's not recognized JSON
+            logger.error(f"Unsupported label file type: {label_file_path.suffix}")
+            raise HTTPException(
+                status_code=415,
+                detail="Unsupported label file type. Only JSON (.json, .mrk.json) is currently supported.",
+            )
+
+    except Exception as e:
+        logger.error(
+            f"Failed to get label content for series {series_id}, file {label_filename}: {e}"
+        )
+        # Avoid leaking detailed exception info unless needed for debugging
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve label content.",
+        )
+
+
 async def _process_volume_data(instances):
     """Process volumetric data (CT, MR, etc.) using VolumeDicomHandler"""
     if not instances:
@@ -125,7 +216,7 @@ async def _process_volume_data(instances):
 
     # Create VTK image data using the centralized utility function
     vtk_image = create_vtk_image_from_volume(
-        ct_handler, center_at_origin=True, column_major=True
+        ct_handler, center_at_origin=False, column_major=True
     )
 
     # Write to VTI format

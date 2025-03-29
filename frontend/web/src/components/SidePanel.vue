@@ -24,6 +24,15 @@
             <div class="visualization-info">
               <span class="visualization-name">{{ vis.description }}</span>
               <span class="visualization-type">{{ vis.type }}</span>
+              <!-- Display active labels if present -->
+              <div v-if="vis.labels && vis.labels.length > 0" class="visualization-labels">
+                <span class="labels-count">Labels: {{ vis.labels.length }}</span>
+                <div class="labels-list-inline">
+                  <span v-for="label in vis.labels" :key="label.id" class="label-tag">
+                    {{ label.type }}
+                  </span>
+                </div>
+              </div>
             </div>
             <div class="visualization-controls">
               <button
@@ -46,8 +55,11 @@
         :selected-patient="selectedPatient"
         :active-series-id="activeSeriesId"
         :loading-series-id="loadingSeriesId"
+        :visualizations="visualizations"
         @select-patient="$emit('select-patient', $event)"
         @select-series="$emit('select-series', $event)"
+        @select-label="handleLabelSelection"
+        @deselect-label="handleLabelDeselection"
       />
     </div>
   </div>
@@ -58,7 +70,7 @@
 <script setup lang="ts">
 import PatientStudySeriesSelector from '@/components/PatientStudySeriesSelector.vue'
 import type { Patient, Series } from '@/types/orthanc'
-import type { Visualization } from '@/types/visualization'
+import type { Visualization, Label } from '@/types/visualization'
 import { defineEmits, defineProps } from 'vue'
 
 // Define props
@@ -80,6 +92,8 @@ const emit = defineEmits<{
   (e: 'remove-visualization', index: number): void
   (e: 'select-patient', patient: Patient): void
   (e: 'select-series', series: Series): void
+  (e: 'select-label', label: Label, seriesId: string): void
+  (e: 'deselect-label', labelId: string, seriesId: string): void
 }>()
 
 // Toggle side panel
@@ -98,6 +112,60 @@ function toggleVisibility(index: number) {
 
 function removeVisualization(index: number) {
   emit('remove-visualization', index)
+}
+
+function handleLabelSelection(label: Label, seriesId: string) {
+  // First, find the visualization that corresponds to this seriesId
+  const visualizationIndex = props.visualizations.findIndex((vis) => vis.seriesId === seriesId)
+
+  if (visualizationIndex >= 0) {
+    // If visualization exists, add label to it
+    const visualization = props.visualizations[visualizationIndex]
+
+    // Initialize the labels array if it doesn't exist
+    if (!visualization.labels) {
+      visualization.labels = []
+    }
+
+    // Add the label to the visualization
+    visualization.labels.push(label)
+
+    // If this is the active visualization, emit the event to update it in the VTK canvas
+    if (visualization === props.activeVolume || visualization === props.activeMultiframe) {
+      emit('select-label', label, seriesId)
+    }
+  } else {
+    // If no visualization exists yet, just pass the event up
+    emit('select-label', label, seriesId)
+  }
+}
+
+function handleLabelDeselection(labelId: string, seriesId: string) {
+  // Find the visualization that corresponds to this seriesId
+  const visualizationIndex = props.visualizations.findIndex((vis) => vis.seriesId === seriesId)
+
+  if (visualizationIndex >= 0) {
+    const visualization = props.visualizations[visualizationIndex]
+
+    // Remove the label from the visualization if it exists
+    if (visualization.labels) {
+      const labelIndex = visualization.labels.findIndex(
+        (l) => l.id === labelId || l.filename === labelId,
+      )
+
+      if (labelIndex >= 0) {
+        visualization.labels.splice(labelIndex, 1)
+
+        // If this is the active visualization, emit the event to update it in the VTK canvas
+        if (visualization === props.activeVolume || visualization === props.activeMultiframe) {
+          emit('deselect-label', labelId, seriesId)
+        }
+      }
+    }
+  } else {
+    // If no visualization exists, just pass the event up
+    emit('deselect-label', labelId, seriesId)
+  }
 }
 </script>
 
@@ -268,5 +336,33 @@ function removeVisualization(index: number) {
   background: #f5f5f5;
   border-radius: 6px;
   font-size: 0.8em;
+}
+
+/* Visualization styles */
+.visualization-labels {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.labels-count {
+  font-size: 0.7em;
+  color: #666;
+}
+
+.labels-list-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.label-tag {
+  padding: 0.15rem 0.3rem;
+  background-color: #e3f2fd;
+  border-radius: 4px;
+  font-size: 0.65em;
+  color: #1976d2;
+  text-transform: capitalize;
 }
 </style>

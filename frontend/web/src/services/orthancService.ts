@@ -57,3 +57,36 @@ export async function fetchSeriesData(seriesId: string): Promise<{
     windowCenter,
   }
 }
+
+/**
+ * Fetches the list of available label filenames for a specific series
+ * @param seriesId - The Orthanc ID of the series
+ */
+export async function fetchAvailableLabels(seriesId: string): Promise<string[]> {
+  // Use the endpoint you created on the backend.
+  // Assuming it directly returns the list based on Orthanc series ID.
+  const response = await fetch(`/api/orthanc/series/${seriesId}/label_list`)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch available labels: ${response.statusText}`)
+  }
+  const labelPaths: string[] = await response.json()
+  // The backend returns full paths, let's extract just the filenames
+  return labelPaths.map((path) => path.substring(path.lastIndexOf('/') + 1))
+}
+
+/**
+ * Fetches the content of a specific label file for a series
+ * @param seriesId - The Orthanc ID of the series
+ * @param labelFilename - The filename of the label to fetch
+ */
+export async function fetchLabelContent(seriesId: string, labelFilename: string): Promise<any> {
+  // Assuming the backend endpoint structure is /api/series/{seriesId}/labels/{filename}
+  const response = await fetch(
+    `/api/orthanc/series/${seriesId}/labels/${encodeURIComponent(labelFilename)}`,
+  )
+  if (!response.ok) {
+    throw new Error(`Failed to fetch label content for ${labelFilename}: ${response.statusText}`)
+  }
+  // Assuming the label content is JSON
+  return response.json()
+}
