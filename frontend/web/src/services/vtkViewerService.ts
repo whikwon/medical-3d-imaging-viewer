@@ -77,7 +77,6 @@ export function createViewport(
   container.style.height = `${(viewport[3] - viewport[1]) * 100}%`
   container.style.left = `${viewport[0] * 100}%`
   container.style.bottom = `${viewport[1] * 100}%`
-  container.style.border = '1px solid #ccc'
   rootContainer.appendChild(container)
   renderWindow.addRenderer(renderer)
 
@@ -133,6 +132,42 @@ export function createMPRViewports(
       trackballInteractorStyle,
     ),
   ) // Bottom right
+
+  // Restore original position style
+  rootContainer.style.position = originalPosition
+
+  return viewports
+}
+
+/**
+ * Creates viewports for CPR (Curved Planar Reformation)
+ * @param renderWindow - The VTK render window
+ * @param rootContainer - The root container element
+ * @param interactor - The VTK interactor
+ * @param imageInteractorStyle - The image interactor style
+ * @returns Array of viewport objects - [main CPR view, cross-section view]
+ */
+export function createCPRViewports(
+  renderWindow: vtkRenderWindow,
+  rootContainer: HTMLElement,
+  interactor: vtkRenderWindowInteractor,
+  imageInteractorStyle: vtkInteractorStyleImage,
+): Viewport[] {
+  const viewports: Viewport[] = []
+
+  // Clear existing container styles temporarily
+  const originalPosition = rootContainer.style.position
+  rootContainer.style.position = 'relative'
+
+  // Create main CPR view (top 70%)
+  viewports.push(
+    createViewport(renderWindow, rootContainer, [0, 0, 1, 1], interactor, imageInteractorStyle),
+  )
+
+  // Create cross-section view (bottom 30%)
+  viewports.push(
+    createViewport(renderWindow, rootContainer, [0.7, 0, 1, 0.3], interactor, imageInteractorStyle),
+  )
 
   // Restore original position style
   rootContainer.style.position = originalPosition

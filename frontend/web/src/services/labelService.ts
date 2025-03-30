@@ -18,8 +18,7 @@ export function drawCenterline(renderer: vtkRenderer, label: Label): vtkActor {
   const points = vtkPoints.newInstance()
 
   // Cast label.data to array if it's a valid centerline
-  console.log('label.data', label.data)
-  const centerlinePoints = label.data as number[][]
+  const centerlinePoints = label.data.position as number[][]
   if (!Array.isArray(centerlinePoints) || centerlinePoints.length === 0) {
     throw new Error('Invalid centerline data: expected array of points')
   }

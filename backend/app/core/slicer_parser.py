@@ -37,6 +37,7 @@ class SlicerMarkupsMrkJson:
     def __init__(self, file_path: str):
         with open(file_path, "r") as f:
             self.data = json.load(f)
+        assert self.coordinate_system == CoordinateSystem.LPS
 
     @property
     def coordinate_system(self):
@@ -57,15 +58,14 @@ class SlicerMarkupsMrkJson:
         """
         markups = self.data["markups"][0]
         if "controlPoints" in markups:
-            coords = np.stack(
-                [np.array(i["position"]) for i in markups["controlPoints"]], axis=0
-            )
-            if self.coordinate_system == CoordinateSystem.LPS:
-                return coords
-            else:
-                return (
-                    TransformationMatrix.get_coordinate_transform_matrix(
-                        self.coordinate_system, CoordinateSystem.LPS
-                    )
-                    @ coords
-                )
+            positions = []
+            orientations = []
+            for i in markups["controlPoints"]:
+                positions.append(i["position"])
+                # 3x3 to 4x4
+                orientation = np.eye(4)
+                orientation[:3, :3] = np.array(i["orientation"]).reshape(3, 3)
+                orientations.append(orientation)
+            positions = np.stack(positions, axis=0)
+            orientations = np.stack(orientations, axis=0)
+            return {"position": positions, "orientation": orientations}

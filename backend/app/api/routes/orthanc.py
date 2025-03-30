@@ -180,9 +180,10 @@ async def get_series_label_content(series_id: str, label_filename: str):
             label_file_path.suffix.lower() == ".json"
             or label_file_path.suffix.lower() == ".mrk"
         ):  # Handle .mrk.json too if needed
-            label = SlicerMarkupsMrkJson(label_file_path)
-            centerline = label.control_points.tolist()
-            return JSONResponse(content=centerline)
+            label = SlicerMarkupsMrkJson(label_file_path).control_points
+            label["position"] = label["position"].tolist()
+            label["orientation"] = label["orientation"].tolist()
+            return JSONResponse(content=label)
         else:
             # For non-JSON files, you might return differently, e.g., FileResponse
             # For now, raise an error if it's not recognized JSON

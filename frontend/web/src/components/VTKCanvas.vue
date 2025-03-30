@@ -75,6 +75,9 @@
       <!-- Add MPR button -->
       <button v-if="activeVolume" @click="openMPRViewport" class="mpr-btn">Open MPR View</button>
 
+      <!-- Add CPR button -->
+      <button v-if="activeVolume" @click="openCPRViewport" class="cpr-btn">Open CPR View</button>
+
       <!-- Add MPR viewport with non-nullable check -->
       <MPRViewport
         v-if="showMPRViewport && mprImageData && vtkInstance"
@@ -84,6 +87,18 @@
         :vtk-instance="vtkInstance"
         :mpr-viewports="mprViewports"
         @close="closeMPRViewport"
+      />
+
+      <!-- Add CPR viewport -->
+      <CPRViewport
+        v-if="showCPRViewport && cprImageData && vtkInstance && centerlineData"
+        :image-data="cprImageData"
+        :window-width="windowWidth"
+        :window-center="windowCenter"
+        :vtk-instance="vtkInstance"
+        :viewports="cprViewports"
+        :centerline="centerlineData"
+        @close="closeCPRViewport"
       />
     </div>
   </div>
@@ -102,6 +117,7 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import {
   cleanupViewer,
   cleanupViewport,
+  createCPRViewports,
   createMPRViewports,
   createViewport,
   initializeViewer,
@@ -117,6 +133,7 @@ import {
 } from '@/services/visualizationService'
 
 // Import all components
+import CPRViewport from '@/components/CPRViewport.vue'
 import MPRViewport from '@/components/MPRViewport.vue'
 import MultiframeControls from '@/components/MultiframeControls.vue'
 import SidePanel from '@/components/SidePanel.vue'
@@ -211,6 +228,12 @@ const {
 const showMPRViewport = ref(false)
 const mprImageData = ref<vtkImageData | null>(null)
 const mprViewports = ref<Viewport[]>([])
+
+// Add new refs for CPR functionality
+const showCPRViewport = ref(false)
+const cprImageData = ref<vtkImageData | null>(null)
+const cprViewports = ref<Viewport[]>([])
+const centerlineData = ref<{ position: number[]; orientation: number[] } | null>(null)
 
 onMounted(async () => {
   // Initialize VTK.js
@@ -435,6 +458,65 @@ function openMPRViewport() {
   }
 }
 
+// Add a function to open the CPR viewport
+async function openCPRViewport() {
+  if (activeVolume.value?.data && vtkInstance.value && activeVolume.value.seriesId) {
+    try {
+      // Find centerline data from labels
+      const centerlineLabels =
+        activeVolume.value.labels?.filter((label) => label.type === 'centerline') || []
+
+      if (centerlineLabels.length === 0) {
+        alert('No centerline data available for this series')
+      } else {
+        // Use the first centerline label (could add a selection UI for multiple centerlines)
+        const centerlineLabel = centerlineLabels[0]
+
+        // Cast the data to the appropriate type and extract position and orientation
+        // We need to cast data to any type to avoid TypeScript errors with unknown properties
+        const labelData = centerlineLabel.data as any
+        centerlineData.value = {
+          position: Array.isArray(labelData?.position) ? labelData.position : [],
+          orientation: Array.isArray(labelData?.orientation) ? labelData.orientation : [],
+        }
+
+        // Check if data is valid
+        if (!centerlineData.value.position.length || !centerlineData.value.orientation.length) {
+          alert('Invalid centerline data format in label')
+          return
+        }
+      }
+
+      // Store the image data for the CPR viewport
+      cprImageData.value = activeVolume.value.data
+
+      // Hide the main viewport temporarily
+      if (initialViewport.value?.container) {
+        initialViewport.value.container.style.display = 'none'
+      }
+
+      // Create CPR viewports using the existing render window
+      cprViewports.value = createCPRViewports(
+        vtkInstance.value.renderWindow,
+        vtkInstance.value.rootContainer,
+        vtkInstance.value.interactor,
+        vtkInstance.value.imageInteractorStyle,
+      )
+
+      // Show the CPR viewport
+      showCPRViewport.value = true
+
+      // Force a render
+      if (vtkInstance.value.renderWindow) {
+        vtkInstance.value.renderWindow.render()
+      }
+    } catch (error) {
+      console.error('Error loading centerline data:', error)
+      alert('Failed to load centerline data for CPR view')
+    }
+  }
+}
+
 // Add a function to close the MPR viewport
 function closeMPRViewport() {
   // Hide the MPR viewport
@@ -450,6 +532,41 @@ function closeMPRViewport() {
 
   // Reset the mprImageData reference to avoid memory leaks
   mprImageData.value = null
+
+  // Show the main viewport again
+  if (initialViewport.value?.container) {
+    initialViewport.value.container.style.display = 'block'
+  }
+
+  // Reset view if there's an active visualization
+  if (activeVolume.value && activeVolume.value.viewport?.renderer) {
+    activeVolume.value.viewport.renderer.resetCamera()
+  }
+
+  // Force a render with a slight delay to ensure all cleanups are complete
+  setTimeout(() => {
+    if (vtkInstance.value?.renderWindow) {
+      vtkInstance.value.renderWindow.render()
+    }
+  }, 50)
+}
+
+// Add a function to close the CPR viewport
+function closeCPRViewport() {
+  // Hide the CPR viewport
+  showCPRViewport.value = false
+
+  // Clean up CPR viewports
+  if (vtkInstance.value && cprViewports.value.length > 0) {
+    cprViewports.value.forEach((viewport) => {
+      cleanupViewport(viewport, vtkInstance.value!.renderWindow, vtkInstance.value!.interactor)
+    })
+    cprViewports.value = []
+  }
+
+  // Reset the cprImageData and centerlineData references to avoid memory leaks
+  cprImageData.value = null
+  centerlineData.value = null
 
   // Show the main viewport again
   if (initialViewport.value?.container) {
@@ -595,7 +712,7 @@ function handleToggleVisibility(index: number) {
 .mpr-btn {
   position: absolute;
   top: 10px;
-  right: 10px;
+  right: 120px;
   padding: 6px 10px;
   background-color: #2196f3;
   color: white;
@@ -606,6 +723,23 @@ function handleToggleVisibility(index: number) {
 }
 
 .mpr-btn:hover {
+  background-color: #1976d2;
+}
+
+.cpr-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 6px 10px;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  z-index: 100;
+}
+
+.cpr-btn:hover {
   background-color: #1976d2;
 }
 </style>
