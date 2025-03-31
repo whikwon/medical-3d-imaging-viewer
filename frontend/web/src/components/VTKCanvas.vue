@@ -468,6 +468,7 @@ async function openCPRViewport() {
 
       if (centerlineLabels.length === 0) {
         alert('No centerline data available for this series')
+        return
       } else {
         // Use the first centerline label (could add a selection UI for multiple centerlines)
         const centerlineLabel = centerlineLabels[0]
@@ -538,17 +539,10 @@ function closeMPRViewport() {
     initialViewport.value.container.style.display = 'block'
   }
 
-  // Reset view if there's an active visualization
-  if (activeVolume.value && activeVolume.value.viewport?.renderer) {
-    activeVolume.value.viewport.renderer.resetCamera()
-  }
+  vtkInstance.value?.interactor.setInteractorStyle(vtkInstance.value?.trackballInteractorStyle)
+  vtkInstance.value?.interactor.setContainer(initialViewport.value?.container)
 
-  // Force a render with a slight delay to ensure all cleanups are complete
-  setTimeout(() => {
-    if (vtkInstance.value?.renderWindow) {
-      vtkInstance.value.renderWindow.render()
-    }
-  }, 50)
+  vtkInstance.value?.renderWindow?.render()
 }
 
 // Add a function to close the CPR viewport
@@ -573,17 +567,10 @@ function closeCPRViewport() {
     initialViewport.value.container.style.display = 'block'
   }
 
-  // Reset view if there's an active visualization
-  if (activeVolume.value && activeVolume.value.viewport?.renderer) {
-    activeVolume.value.viewport.renderer.resetCamera()
-  }
+  vtkInstance.value?.interactor.setInteractorStyle(vtkInstance.value?.trackballInteractorStyle)
+  vtkInstance.value?.interactor.setContainer(initialViewport.value?.container)
 
-  // Force a render with a slight delay to ensure all cleanups are complete
-  setTimeout(() => {
-    if (vtkInstance.value?.renderWindow) {
-      vtkInstance.value.renderWindow.render()
-    }
-  }, 50)
+  vtkInstance.value?.renderWindow?.render()
 }
 
 // Patient selection function
@@ -622,7 +609,6 @@ function handleLabelSelection(label: Label, seriesId: string) {
   if (!visualization || !visualization.viewport) return
 
   // Draw the label based on its type
-  console.log('label.type', label.type)
   try {
     if (label.type === 'centerline') {
       drawCenterline(visualization.viewport.renderer, label)

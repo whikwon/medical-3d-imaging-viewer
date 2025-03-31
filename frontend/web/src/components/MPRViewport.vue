@@ -21,11 +21,7 @@ import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData'
 import vtkSphereSource from '@kitware/vtk.js/Filters/Sources/SphereSource'
 import vtkImageReslice from '@kitware/vtk.js/Imaging/Core/ImageReslice'
 import { SlabMode } from '@kitware/vtk.js/Imaging/Core/ImageReslice/Constants'
-import vtkInteractorStyleImage from '@kitware/vtk.js/Interaction/Style/InteractorStyleImage'
-import vtkInteractorStyleTrackballCamera from '@kitware/vtk.js/Interaction/Style/InteractorStyleTrackballCamera'
-import vtkOrientationMarkerWidget from '@kitware/vtk.js/Interaction/Widgets/OrientationMarkerWidget'
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor'
-import vtkAnnotatedCubeActor from '@kitware/vtk.js/Rendering/Core/AnnotatedCubeActor'
 import vtkImageMapper from '@kitware/vtk.js/Rendering/Core/ImageMapper'
 import vtkImageSlice from '@kitware/vtk.js/Rendering/Core/ImageSlice'
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper'
@@ -58,7 +54,6 @@ interface ViewObject {
   GLWindow: HTMLElement
   interactor: vtkRenderWindowInteractor
   widgetManager: vtkWidgetManager
-  orientationWidget: vtkOrientationMarkerWidget | null
   widgetInstance: any // VTK.js widget instance, difficult to type precisely
   reslice: vtkImageReslice
   resliceMapper: vtkImageMapper
@@ -138,6 +133,7 @@ watch(
 
 // Initialize VTK.js viewer - this now uses the parent's shared rendering context
 onMounted(() => {
+  console.log('onMounted MPRViewport')
   if (
     !props.vtkInstance ||
     !props.imageData ||
@@ -160,9 +156,6 @@ onMounted(() => {
   for (let i = 0; i < 4; i++) {
     const viewport = props.mprViewports[i]
 
-    // Clear the renderer first
-    viewport.renderer.removeAllViewProps()
-
     // Create a view object
     const obj: ViewObject = {
       renderWindow: props.vtkInstance.renderWindow,
@@ -170,7 +163,6 @@ onMounted(() => {
       GLWindow: props.vtkInstance.rootContainer, // This is used differently now
       interactor: props.vtkInstance.interactor,
       widgetManager: vtkWidgetManager.newInstance(),
-      orientationWidget: null, // Will set up later
       widgetInstance: null, // Will set up later
       reslice: vtkImageReslice.newInstance(),
       resliceMapper: vtkImageMapper.newInstance(),
@@ -212,7 +204,6 @@ onMounted(() => {
     // Setup MPR views
     if (i < 3) {
       // Set up slice views (axial, coronal, sagittal)
-      obj.interactor.setInteractorStyle(vtkInteractorStyleImage.newInstance())
       obj.widgetInstance = obj.widgetManager.addWidget(widget, xyzToViewType[i])
       obj.widgetInstance.setScaleInPixels(true)
       obj.widgetInstance.setHoleWidth(50)
@@ -236,59 +227,8 @@ onMounted(() => {
       viewAttributes.value.push(obj)
     } else {
       // Set up 3D view
-      obj.interactor.setInteractorStyle(vtkInteractorStyleTrackballCamera.newInstance())
       view3D.value = obj
     }
-
-    // Setup orientation widget with the specific interactor
-    const axes = vtkAnnotatedCubeActor.newInstance()
-    axes.setDefaultStyle({
-      text: '+X',
-      fontStyle: 'bold',
-      fontFamily: 'Arial',
-      fontColor: 'black',
-      fontSizeScale: (res) => res / 2,
-      faceColor: createRGBStringFromRGBValues(viewColors[0]),
-      faceRotation: 0,
-      edgeThickness: 0.1,
-      edgeColor: 'black',
-      resolution: 400,
-    })
-    axes.setXMinusFaceProperty({
-      text: '-X',
-      faceColor: createRGBStringFromRGBValues(viewColors[0]),
-      faceRotation: 90,
-      fontStyle: 'italic',
-    })
-    axes.setYPlusFaceProperty({
-      text: '+Y',
-      faceColor: createRGBStringFromRGBValues(viewColors[1]),
-      fontSizeScale: (res) => res / 4,
-    })
-    axes.setYMinusFaceProperty({
-      text: '-Y',
-      faceColor: createRGBStringFromRGBValues(viewColors[1]),
-      fontColor: 'white',
-    })
-    axes.setZPlusFaceProperty({
-      text: '+Z',
-      faceColor: createRGBStringFromRGBValues(viewColors[2]),
-    })
-    axes.setZMinusFaceProperty({
-      text: '-Z',
-      faceColor: createRGBStringFromRGBValues(viewColors[2]),
-      faceRotation: 45,
-    })
-
-    obj.orientationWidget = vtkOrientationMarkerWidget.newInstance({
-      actor: axes,
-      interactor: obj.renderWindow.getInteractor(),
-    })
-    obj.orientationWidget.setEnabled(true)
-    obj.orientationWidget.setViewportCorner(vtkOrientationMarkerWidget.Corners.BOTTOM_RIGHT)
-    obj.orientationWidget.setViewportSize(0.15)
-    obj.orientationWidget.setMinPixelSize(100)
-    obj.orientationWidget.setMaxPixelSize(300)
   }
 
   // Setup image data connections and interactions
@@ -348,15 +288,14 @@ onMounted(() => {
       computeFocalPointOffset: true,
       sphereSources: obj.sphereSources,
     })
-
-    // Force a render to update the view
-    obj.renderWindow.render()
   })
 
   if (view3D.value) {
     view3D.value.renderer.resetCamera()
     view3D.value.renderer.resetCameraClippingRange()
   }
+
+  props.vtkInstance.renderWindow.render()
 })
 
 // Cleanup
@@ -370,14 +309,19 @@ onBeforeUnmount(() => {
     if (obj.widgetManager) {
       obj.widgetManager.delete()
     }
-    if (obj.orientationWidget) {
-      obj.orientationWidget.setEnabled(false)
-      obj.orientationWidget.delete()
+    if (obj.reslice) {
+      obj.reslice.delete()
+    }
+    if (obj.resliceMapper) {
+      obj.resliceMapper.delete()
+    }
+    if (obj.resliceActor) {
+      obj.resliceActor.delete()
     }
     if (obj.renderer) {
-      obj.renderer.removeAllViewProps()
       obj.renderer.delete()
     }
+
     // Clean up sphere actors and sources
     obj.sphereActors.forEach((actor) => actor.delete())
     obj.sphereSources.forEach((source) => source.delete())
@@ -386,13 +330,26 @@ onBeforeUnmount(() => {
   })
 
   if (view3D.value) {
-    if (view3D.value.orientationWidget) {
-      view3D.value.orientationWidget.setEnabled(false)
-      view3D.value.orientationWidget.delete()
+    // Delete reslice objects in 3D view
+    if (view3D.value.reslice) {
+      view3D.value.reslice.delete()
+    }
+    if (view3D.value.resliceMapper) {
+      view3D.value.resliceMapper.delete()
+    }
+    if (view3D.value.resliceActor) {
+      view3D.value.resliceActor.delete()
     }
     if (view3D.value.renderer) {
-      view3D.value.renderer.removeAllViewProps()
       view3D.value.renderer.delete()
+    }
+
+    // Clean up sphere actors and sources
+    if (view3D.value.sphereActors) {
+      view3D.value.sphereActors.forEach((actor) => actor.delete())
+    }
+    if (view3D.value.sphereSources) {
+      view3D.value.sphereSources.forEach((source) => source.delete())
     }
   }
 
