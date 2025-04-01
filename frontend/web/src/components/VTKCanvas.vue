@@ -6,16 +6,11 @@
       :visualizations="visualizations"
       :active-volume="activeVolume"
       :active-multiframe="activeMultiframe"
-      :selected-patient="selectedPatient"
-      :active-series-id="activeSeriesId"
-      :loading-series-id="loadingSeriesId"
       @select-visualization="selectVisualization"
       @toggle-visibility="handleToggleVisibility"
-      @remove-visualization="removeVisualizationById"
-      @select-patient="selectPatient"
-      @select-series="loadSeries"
-      @select-label="handleLabelSelection"
-      @deselect-label="handleLabelDeselection"
+      @remove-visualization="
+        (index) => visualizationStore.removeVisualizationById(index, vtkInstance)
+      "
     />
 
     <!-- Visualization Area -->
@@ -40,7 +35,7 @@
         :jExtentMax="jExtentMax"
         :kExtentMin="kExtentMin"
         :kExtentMax="kExtentMax"
-        @close="closeOverlay"
+        @close="visualizationStore.closeOverlay"
         @windowLevelChanged="updateWindowLevelUI"
         @slicesChanged="updateSlicesUI"
       />
@@ -57,7 +52,7 @@
         :windowCenterMax="windowCenterMax"
         :maxFrame="maxFrame"
         :isPlaying="isPlaying"
-        @close="closeOverlay"
+        @close="visualizationStore.closeOverlay"
         @frameChanged="updateMultiframeFrameUI"
         @togglePlayback="playMultiframeUI"
         @windowLevelChanged="updateWindowLevelUI"
@@ -111,7 +106,7 @@ import '@kitware/vtk.js/IO/Core/DataAccessHelper/JSZipDataAccessHelper'
 import '@kitware/vtk.js/Rendering/Profiles/Geometry'
 import '@kitware/vtk.js/Rendering/Profiles/Volume'
 
-import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, type Ref, watch } from 'vue'
 
 // Import our services and types
 import {
@@ -124,7 +119,7 @@ import {
   setupAxesActor,
   setupOrientationWidget,
 } from '@/services/vtkViewerService'
-import type { Viewport, VTKViewerInstance } from '@/types/visualization'
+import type { CenterlineData, Viewport, VTKViewerInstance } from '@/types/visualization'
 
 // Import visualization service
 import {
@@ -141,21 +136,16 @@ import VolumeControls from '@/components/VolumeControls.vue'
 
 // Import our new composable
 import { useControlPanelState } from '@/composables/useControlPanelState'
-import { useVisualizationState } from '@/composables/useVisualizationState'
 import { useVTKInteractor } from '@/composables/useVTKInteractor'
 
 import { fetchSeriesData } from '@/services/orthancService'
-import type { Patient, Series } from '@/types/orthanc'
+import type { Series } from '@/types/orthanc'
 import vtkImageData from '@kitware/vtk.js/Common/DataModel/ImageData'
 
-// Import our new label service
-import {
-  drawCenterline,
-  drawLabelsForVisualization,
-  removeLabel,
-  updateLabelsVisibility,
-} from '@/services/labelService'
-import type { Label } from '@/types/visualization'
+import { drawLabelsForVisualization, updateLabelsVisibility } from '@/services/labelService'
+import { usePatientStudyStore } from '@/stores/usePatientStudyStore'
+import { useVisualizationStore } from '@/stores/useVisualizationStore'
+import { storeToRefs } from 'pinia'
 
 // Refs for DOM elements
 const vtkContainer = ref<HTMLElement | null>(null)
@@ -164,26 +154,21 @@ const vtkContainer = ref<HTMLElement | null>(null)
 const vtkInstance: Ref<VTKViewerInstance | null> = ref(null)
 const initialViewport: Ref<Viewport | null> = ref(null)
 
-// Study list state
+// Study list state - Managed by Pinia now
 const isSidePanelCollapsed = ref(false)
-const activeSeriesId = ref<string | null>(null)
-const loadingSeriesId = ref<string | null>(null)
 
-// Patient selection state
-const selectedPatient = ref<Patient | null>(null)
+// Patient selection state - Managed by Pinia now
 
 // Use our visualization state composable
-const {
-  visualizations,
-  showControlOverlay,
-  activeVolume,
-  activeMultiframe,
-  addVisualization,
-  closeOverlay,
-  toggleVisibility,
-  removeVisualizationById,
-  setActiveVisualization,
-} = useVisualizationState(vtkInstance)
+const patientStudyStore = usePatientStudyStore()
+const visualizationStore = useVisualizationStore()
+
+// Get reactive refs from the patient store (remove unused activeSeriesId)
+const { loadingSeriesId: storeLoadingSeriesId } = storeToRefs(patientStudyStore)
+
+// Get reactive refs from the visualization store
+const { visualizations, showControlOverlay, activeVolume, activeMultiframe } =
+  storeToRefs(visualizationStore)
 
 // Use our VTK interactor composable
 const { setupInteraction } = useVTKInteractor(vtkInstance)
@@ -233,7 +218,7 @@ const mprViewports = ref<Viewport[]>([])
 const showCPRViewport = ref(false)
 const cprImageData = ref<vtkImageData | null>(null)
 const cprViewports = ref<Viewport[]>([])
-const centerlineData = ref<{ position: number[]; orientation: number[] } | null>(null)
+const centerlineData = ref<CenterlineData | null>(null)
 
 onMounted(async () => {
   // Initialize VTK.js
@@ -261,11 +246,32 @@ onBeforeUnmount(() => {
   cleanupControlPanel()
 })
 
-// Load series function
-async function loadSeries(series: Series) {
-  if (loadingSeriesId.value) return // Prevent multiple simultaneous loads
-  loadingSeriesId.value = series.ID
-  activeSeriesId.value = series.ID
+// Watch for the store's loadingSeriesId to change - This triggers the load
+watch(storeLoadingSeriesId, (newLoadingId, oldLoadingId) => {
+  if (newLoadingId && newLoadingId !== oldLoadingId) {
+    // Find the series details from the patient store (assuming studies are loaded)
+    let seriesToLoad: Series | null = null
+    for (const study of patientStudyStore.studies) {
+      const foundSeries = study.series?.find((s) => s.ID === newLoadingId)
+      if (foundSeries) {
+        seriesToLoad = foundSeries
+        break
+      }
+    }
+
+    if (seriesToLoad) {
+      loadSeriesData(seriesToLoad)
+    } else {
+      console.error(`VTKCanvas: Could not find series details for ID ${newLoadingId} in store.`)
+      // Inform the store that loading failed because we couldn't find the series details
+      patientStudyStore.setSeriesLoadingCompleteAction(newLoadingId, false)
+    }
+  }
+})
+
+// Actual data loading function - triggered by watcher
+async function loadSeriesData(series: Series) {
+  let success = false
   try {
     const result = await fetchSeriesData(series.ID)
     await handleSeriesLoaded(
@@ -275,15 +281,17 @@ async function loadSeries(series: Series) {
       result.windowWidth,
       result.windowCenter,
     )
+    success = true
   } catch (error) {
-    console.error('Error loading series:', error)
-    alert('Failed to load series')
+    console.error(`Error loading series data for ${series.ID}:`, error)
+    alert('Failed to load series data')
+    success = false
   } finally {
-    loadingSeriesId.value = null
+    patientStudyStore.setSeriesLoadingCompleteAction(series.ID, success)
   }
 }
 
-// Handler for when a series is loaded
+// Handler for when a series is loaded (mostly unchanged, but now called by loadSeriesData)
 async function handleSeriesLoaded(
   seriesId: string,
   series: Series,
@@ -297,7 +305,11 @@ async function handleSeriesLoaded(
     // Check if this series is already loaded
     const alreadyLoaded = visualizations.value.some((vis) => vis.seriesId === seriesId)
     if (alreadyLoaded) {
-      throw new Error('This series is already loaded in the viewer')
+      const index = visualizations.value.findIndex((vis) => vis.seriesId === seriesId)
+      if (index !== -1) {
+        visualizationStore.setActiveVisualization(index) // Update local active state
+      }
+      return
     }
 
     if (series.MainDicomTags.Modality === 'XA') {
@@ -310,11 +322,11 @@ async function handleSeriesLoaded(
         receivedWindowCenter,
       )
 
-      // Add visualization property for viewport
+      // Add viewport reference to the visualization object BEFORE adding to store
       result.visualization.viewport = initialViewport.value
 
       // Add visualization using our composable
-      addVisualization(result.visualization)
+      visualizationStore.addVisualization(result.visualization)
 
       // Update multiframe controls using our new composable
       setMultiframeControlParams({
@@ -344,11 +356,11 @@ async function handleSeriesLoaded(
         receivedWindowCenter,
       )
 
-      // Add visualization property for viewport
+      // Add viewport reference to the visualization object BEFORE adding to store
       result.visualization.viewport = initialViewport.value
 
       // Add visualization using our composable
-      addVisualization(result.visualization)
+      visualizationStore.addVisualization(result.visualization)
 
       // Update volume controls using our new composable
       setVolumeControlParams({
@@ -390,12 +402,13 @@ async function handleSeriesLoaded(
       vtkInstance.value.renderWindow.render()
     }
   } catch (error: unknown) {
-    console.error('Error handling loaded series:', error)
+    console.error(`Error in handleSeriesLoaded for ${seriesId}:`, error)
     if (error instanceof Error) {
       alert('Failed to visualize series: ' + error.message)
     } else {
       alert('Failed to visualize series: unknown error')
     }
+    throw error // Propagate error so loadSeriesData knows it failed
   }
 }
 
@@ -473,18 +486,22 @@ async function openCPRViewport() {
         // Use the first centerline label (could add a selection UI for multiple centerlines)
         const centerlineLabel = centerlineLabels[0]
 
-        // Cast the data to the appropriate type and extract position and orientation
-        // We need to cast data to any type to avoid TypeScript errors with unknown properties
-        const labelData = centerlineLabel.data as any
-        centerlineData.value = {
-          position: Array.isArray(labelData?.position) ? labelData.position : [],
-          orientation: Array.isArray(labelData?.orientation) ? labelData.orientation : [],
+        // Use the defined interface and type assertion
+        const labelData = centerlineLabel.data as CenterlineData | undefined
+        if (
+          !labelData ||
+          !Array.isArray(labelData.position) ||
+          !Array.isArray(labelData.orientation)
+        ) {
+          alert('Invalid centerline data format in label')
+          centerlineData.value = null // Clear potentially invalid data
+          return
         }
 
-        // Check if data is valid
-        if (!centerlineData.value.position.length || !centerlineData.value.orientation.length) {
-          alert('Invalid centerline data format in label')
-          return
+        centerlineData.value = {
+          position: labelData.position,
+          orientation: labelData.orientation,
+          radius: labelData.radius,
         }
       }
 
@@ -540,7 +557,10 @@ function closeMPRViewport() {
   }
 
   vtkInstance.value?.interactor.setInteractorStyle(vtkInstance.value?.trackballInteractorStyle)
-  vtkInstance.value?.interactor.setContainer(initialViewport.value?.container)
+  // Add null check before setting container
+  if (initialViewport.value?.container) {
+    vtkInstance.value?.interactor.setContainer(initialViewport.value.container)
+  }
 
   vtkInstance.value?.renderWindow?.render()
 }
@@ -568,20 +588,18 @@ function closeCPRViewport() {
   }
 
   vtkInstance.value?.interactor.setInteractorStyle(vtkInstance.value?.trackballInteractorStyle)
-  vtkInstance.value?.interactor.setContainer(initialViewport.value?.container)
+  // Add null check before setting container
+  if (initialViewport.value?.container) {
+    vtkInstance.value?.interactor.setContainer(initialViewport.value.container)
+  }
 
   vtkInstance.value?.renderWindow?.render()
 }
 
-// Patient selection function
-function selectPatient(patient: Patient) {
-  selectedPatient.value = patient
-}
-
-// Add function to select visualization
+// Update function to select visualization (mostly unchanged, interacts with local composable)
 function selectVisualization(index: number) {
   if (!vtkInstance.value) return
-  setActiveVisualization(index)
+  visualizationStore.setActiveVisualization(index) // Use the store action
 
   // Setup interaction for the selected visualization
   if (vtkInstance.value.renderWindow) {
@@ -589,6 +607,7 @@ function selectVisualization(index: number) {
     setupInteraction(selectedVis)
 
     // Draw any labels that exist for this visualization
+    // This might eventually be triggered by watching the visualization store state
     if (selectedVis.labels && selectedVis.labels.length > 0) {
       drawLabelsForVisualization(selectedVis)
     }
@@ -600,56 +619,12 @@ function selectVisualization(index: number) {
   }
 }
 
-// Add handlers for label selection and deselection
-function handleLabelSelection(label: Label, seriesId: string) {
-  if (!vtkInstance.value || !initialViewport.value?.renderer) return
-
-  // Find the visualization for this series
-  const visualization = visualizations.value.find((v) => v.seriesId === seriesId)
-  if (!visualization || !visualization.viewport) return
-
-  // Draw the label based on its type
-  try {
-    if (label.type === 'centerline') {
-      drawCenterline(visualization.viewport.renderer, label)
-    }
-    // Add support for other label types here as needed
-
-    // Render to show the new label
-    if (vtkInstance.value.renderWindow) {
-      vtkInstance.value.renderWindow.render()
-    }
-  } catch (error) {
-    console.error('Error drawing label:', error)
-  }
-}
-
-function handleLabelDeselection(labelId: string, seriesId: string) {
-  if (!vtkInstance.value) return
-
-  // Find the visualization for this series
-  const visualization = visualizations.value.find((v) => v.seriesId === seriesId)
-  if (!visualization || !visualization.viewport || !visualization.viewport.renderer) return
-
-  // Find the label by ID or filename
-  const label = visualization.labels?.find((l) => l.id === labelId || l.filename === labelId)
-  if (!label) return
-
-  // Remove the label from the renderer
-  removeLabel(visualization.viewport.renderer, label)
-
-  // Render to update the view
-  if (vtkInstance.value.renderWindow) {
-    vtkInstance.value.renderWindow.render()
-  }
-}
-
 // Update toggleVisibility function to handle label visibility
 function handleToggleVisibility(index: number) {
   if (!vtkInstance.value || !vtkInstance.value.renderWindow) return
 
-  // Call the original toggleVisibility from the composable
-  toggleVisibility(index) // This toggles the visibility state
+  // Call the store action, passing the vtkInstance
+  visualizationStore.toggleVisibility(index, vtkInstance.value)
 
   // Update label visibility based on parent visualization
   const vis = visualizations.value[index]

@@ -28,21 +28,26 @@ export interface Viewport {
 }
 
 /**
- * Represents the data and state for a single loaded label (e.g., centerline, fiducials).
- * The actual VTK actor is generated and managed by the viewer component based on this data.
+ * Interface for a single label associated with a visualization.
  */
+
+// Define a specific type for centerline data
+export interface CenterlineData {
+  position: number[][]
+  orientation: number[][] // Or a more specific type if needed
+  radius: number[]
+}
+
 export interface Label {
   id: string
   filename: string
   seriesId: string
   type: 'centerline' | 'fiducial' | 'segmentation' | 'unknown'
-  data: unknown
+  // Use a more specific type for data, especially for centerlines
+  data: CenterlineData | unknown // Allow other types for other labels
   visible: boolean
   color?: [number, number, number]
   opacity?: number
-  lineWidth?: number
-  pointSize?: number
-  tubeRadius?: number
   vtkActor?: vtkActor | null
 }
 

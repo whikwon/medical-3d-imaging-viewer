@@ -15,7 +15,7 @@
           v-for="patient in patients"
           :key="patient.ID"
           class="patient-card"
-          @click="$emit('select-patient', patient)"
+          @click="patientStudyStore.selectPatientAction(patient)"
           :class="{ 'patient-card-active': selectedPatient?.ID === patient.ID }"
         >
           <h3>{{ patient.MainDicomTags.PatientName || 'Unknown Patient' }}</h3>
@@ -28,16 +28,16 @@
     <!-- Study/Series List -->
     <div v-if="selectedPatient" class="section">
       <h4>Studies & Series</h4>
-      <div v-if="loading" class="loading">
+      <div v-if="loadingStudies" class="loading">
         <div class="loader"></div>
       </div>
-      <div v-else-if="error" class="error">
-        {{ error }}
+      <div v-else-if="studyError" class="error">
+        {{ studyError }}
       </div>
       <div v-else class="studies">
         <div v-for="study in studies" :key="study.ID" class="study-item">
           <div class="study-header" @click="toggleStudy(study.ID)">
-            <span>{{ study.PatientMainDicomTags.PatientName || 'Unknown Patient' }}</span>
+            <span>{{ selectedPatient?.MainDicomTags?.PatientName || 'Unknown Patient' }}</span>
             <span class="study-date">{{ formatDate(study.MainDicomTags.StudyDate) }}</span>
           </div>
           <div v-if="expandedStudies.includes(study.ID)" class="series-list">
@@ -72,19 +72,19 @@
       <div v-else-if="labelError" class="error">
         <p>{{ labelError }}</p>
       </div>
-      <div v-else-if="availableLabels.length === 0" class="empty-state">
+      <div v-else-if="availableLabelFilenames.length === 0" class="empty-state">
         No labels available for this series
       </div>
       <div v-else class="labels-list">
         <div
-          v-for="label in availableLabels"
+          v-for="label in availableLabelFilenames"
           :key="label"
           class="label-item"
           @click="toggleLabel(label)"
-          :class="{ 'label-item-active': selectedLabels.includes(label) }"
+          :class="{ 'label-item-active': selectedLabelFilenames.includes(label) }"
         >
           <span class="label-name">{{ label }}</span>
-          <span class="label-status">{{ selectedLabels.includes(label) ? '✓' : '' }}</span>
+          <span class="label-status">{{ selectedLabelFilenames.includes(label) ? '✓' : '' }}</span>
         </div>
       </div>
     </div>
@@ -92,59 +92,40 @@
 </template>
 
 <script setup lang="ts">
-import {
-  fetchPatients,
-  fetchSeriesForStudy,
-  fetchStudies,
-  fetchAvailableLabels,
-  fetchLabelContent,
-} from '@/services/orthancService'
-import type { Patient, Series, Study } from '@/types/orthanc'
-import type { Label } from '@/types/visualization'
+import { usePatientStudyStore } from '@/stores/usePatientStudyStore'
+import { useVisualizationStore } from '@/stores/useVisualizationStore'
+import type { Series } from '@/types/orthanc'
+import { storeToRefs } from 'pinia'
 import { onMounted, ref, watch } from 'vue'
 
-const props = defineProps<{
-  selectedPatient: Patient | null
-  activeSeriesId: string | null
-  loadingSeriesId: string | null
-  visualizations: Visualization[]
-}>()
+// --- Pinia Store Setup ---
+const patientStudyStore = usePatientStudyStore()
+const visualizationStore = useVisualizationStore()
 
-const emit = defineEmits<{
-  (e: 'select-patient', patient: Patient): void
-  (e: 'select-series', series: Series): void
-  (e: 'select-label', label: Label, seriesId: string): void
-  (e: 'deselect-label', labelId: string, seriesId: string): void
-}>()
+// Use storeToRefs to get reactive state properties
+const {
+  patients,
+  selectedPatient,
+  studies,
+  activeSeriesId,
+  loadingSeriesId,
+  loadingPatients,
+  loadingStudies,
+  patientError,
+  studyError,
+} = storeToRefs(patientStudyStore)
 
-// Study list state
-const studies = ref<(Study & { series?: Series[] })[]>([])
+const { availableLabelFilenames, selectedLabelFilenames, loadingLabels, labelError } =
+  storeToRefs(visualizationStore)
+// ------
+
+// Local state (if any remains, e.g., UI state like expanded studies)
 const expandedStudies = ref<string[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
 
-// Patient selection state
-const patients = ref<Patient[]>([])
-const loadingPatients = ref(true)
-const patientError = ref<string | null>(null)
-
-// Labels state
-const availableLabels = ref<string[]>([])
-const selectedLabels = ref<string[]>([])
-const loadingLabels = ref(false)
-const labelError = ref<string | null>(null)
-
-onMounted(async () => {
-  // Load patients on component mount
-  try {
-    loadingPatients.value = true
-    patients.value = await fetchPatients()
-  } catch (e) {
-    patientError.value = 'Failed to load patients. Please try again.'
-    console.error('Error loading patients:', e)
-  } finally {
-    loadingPatients.value = false
-  }
+// --- Component Logic using Stores ---
+onMounted(() => {
+  // Load patients on component mount using store action
+  patientStudyStore.fetchPatientsAction()
 })
 
 // Study list functions
@@ -174,123 +155,23 @@ function formatDate(dateStr?: string) {
   return date.toLocaleDateString()
 }
 
-// Function to load studies for a patient
-async function loadStudiesForPatient(patientId: string) {
-  try {
-    loading.value = true
-    const allStudies = await fetchStudies()
-    // Filter studies for the current patient
-    studies.value = allStudies.filter((study) => study.ParentPatient === patientId)
-
-    // Load series for each study
-    for (const study of studies.value) {
-      try {
-        study.series = await fetchSeriesForStudy(study.ID)
-      } catch (e) {
-        console.error(`Error loading series for study ${study.ID}:`, e)
-        study.series = []
-      }
-    }
-  } catch (e) {
-    error.value = 'Failed to load studies'
-    console.error('Error loading studies:', e)
-  } finally {
-    loading.value = false
-  }
-}
-
-// Function to load available labels for a series
-async function loadLabelsForSeries(seriesId: string) {
-  try {
-    loadingLabels.value = true
-    availableLabels.value = await fetchAvailableLabels(seriesId)
-
-    // Find the visualization for this series to get already selected labels
-    const visualization = props.visualizations.find((vis) => vis.seriesId === seriesId)
-    if (visualization && visualization.labels) {
-      // Extract filenames from labels and set them as selected
-      selectedLabels.value = visualization.labels.map((label) => label.filename)
-    } else {
-      selectedLabels.value = []
-    }
-  } catch (e) {
-    labelError.value = 'Failed to load labels'
-    console.error('Error loading labels:', e)
-  } finally {
-    loadingLabels.value = false
-  }
-}
-
-// Function to select a series and load its labels
+// Function to select a series (calls store action)
 function selectSeries(series: Series) {
-  emit('select-series', series)
-  // Labels will be loaded via the watcher
+  patientStudyStore.selectSeriesAction(series)
+  // No need to manually load labels here, the watcher will handle it
 }
 
-// Function to toggle a label selection
+// Function to toggle a label selection (calls store action)
 async function toggleLabel(labelFilename: string) {
-  if (!props.activeSeriesId) return
-
-  const isSelected = selectedLabels.value.includes(labelFilename)
-
-  if (isSelected) {
-    // Deselect the label
-    selectedLabels.value = selectedLabels.value.filter((l) => l !== labelFilename)
-    emit('deselect-label', labelFilename, props.activeSeriesId)
-  } else {
-    // Select the label - first fetch its content
-    try {
-      const labelData = await fetchLabelContent(props.activeSeriesId, labelFilename)
-
-      // Determine label type based on filename or content
-      let labelType: 'centerline' | 'fiducial' | 'segmentation' | 'unknown' = 'unknown'
-      if (labelFilename.includes('centerline')) labelType = 'centerline'
-      else if (labelFilename.includes('fiducial')) labelType = 'fiducial'
-      else if (labelFilename.includes('segment')) labelType = 'segmentation'
-
-      // Create a label object
-      const label: Label = {
-        id: `${props.activeSeriesId}_${labelFilename}`,
-        filename: labelFilename,
-        seriesId: props.activeSeriesId,
-        type: labelType,
-        data: labelData,
-        visible: true,
-        color: [0.5, 0.5, 1.0], // Default blue color
-        opacity: 1.0,
-      }
-
-      selectedLabels.value.push(labelFilename)
-      emit('select-label', label, props.activeSeriesId)
-    } catch (e) {
-      console.error(`Error loading label content for ${labelFilename}:`, e)
-      labelError.value = `Failed to load label: ${labelFilename}`
-    }
-  }
+  if (!activeSeriesId.value) return
+  // Pass activeSeriesId.value to the action
+  await visualizationStore.toggleLabelSelectionAction(labelFilename, activeSeriesId.value)
 }
-
-// Watch for patient selection changes
-watch(
-  () => props.selectedPatient,
-  (newPatient: Patient | null) => {
-    if (newPatient) {
-      loadStudiesForPatient(newPatient.ID)
-    }
-  },
-)
 
 // Watch for active series changes to load labels
-watch(
-  () => props.activeSeriesId,
-  (newSeriesId: string | null) => {
-    if (newSeriesId) {
-      loadLabelsForSeries(newSeriesId)
-    } else {
-      availableLabels.value = []
-      selectedLabels.value = []
-    }
-  },
-)
+watch(activeSeriesId, (newSeriesId) => {
+  visualizationStore.fetchAvailableLabelsAction(newSeriesId)
+})
 </script>
 
 <style scoped>

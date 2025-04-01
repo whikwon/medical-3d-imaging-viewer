@@ -1,8 +1,10 @@
 import type { Label, Visualization } from '@/types/visualization'
 import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray'
+import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray'
 import vtkPoints from '@kitware/vtk.js/Common/Core/Points'
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData'
 import vtkTubeFilter from '@kitware/vtk.js/Filters/General/TubeFilter'
+import { VaryRadius } from '@kitware/vtk.js/Filters/General/TubeFilter/Constants'
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor'
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper'
 import vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer'
@@ -14,25 +16,47 @@ import vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer'
  * @returns The created VTK actor
  */
 export function drawCenterline(renderer: vtkRenderer, label: Label): vtkActor {
+  // Type guard to ensure data is CenterlineData
+  if (
+    label.type !== 'centerline' ||
+    !label.data ||
+    typeof label.data !== 'object' ||
+    !('position' in label.data) ||
+    !('radius' in label.data)
+  ) {
+    throw new Error('Invalid label data for centerline: missing position or radius')
+  }
+  // Cast after check for type safety
+  const centerlineData = label.data as { position: number[][]; radius: number[] }
+
   // Create points and add them to a vtkPoints object
   const points = vtkPoints.newInstance()
 
-  // Cast label.data to array if it's a valid centerline
-  const centerlinePoints = label.data.position as number[][]
-  if (!Array.isArray(centerlinePoints) || centerlinePoints.length === 0) {
-    throw new Error('Invalid centerline data: expected array of points')
+  const centerlinePoints = centerlineData.position // Use checked data
+  const centerlineRadii = centerlineData.radius // Use checked data
+
+  if (
+    !Array.isArray(centerlinePoints) ||
+    !Array.isArray(centerlineRadii) || // Check if radii is an array
+    centerlinePoints.length === 0 ||
+    centerlinePoints.length !== centerlineRadii.length // Ensure lengths match
+  ) {
+    throw new Error('Invalid centerline data: expected matching arrays of points and radii')
   }
 
   // Add points to the vtkPoints object
   for (const point of centerlinePoints) {
     if (Array.isArray(point) && point.length >= 3) {
       points.insertNextPoint(point[0], point[1], point[2])
+    } else {
+      // Handle potential invalid point format if necessary
+      console.warn('Skipping invalid point format:', point)
     }
   }
 
   // Create a polyline from the points
   const lines = vtkCellArray.newInstance()
-  const numPoints = centerlinePoints.length
+  const numPoints = points.getNumberOfPoints()
 
   // Insert the polyline into the cell array
   const polyLine = new Uint16Array(numPoints + 1)
@@ -47,16 +71,28 @@ export function drawCenterline(renderer: vtkRenderer, label: Label): vtkActor {
   polyData.setPoints(points)
   polyData.setLines(lines)
 
+  // Add radii as scalar data to the points
+  const radiusData = vtkDataArray.newInstance({
+    name: 'Radius',
+    values: Float32Array.from(centerlineRadii),
+    numberOfComponents: 1, // Each radius is a single scalar value
+  })
+  polyData.getPointData().setScalars(radiusData)
+
   // Use tube filter to create a tube along the centerline
   const tubeFilter = vtkTubeFilter.newInstance()
   tubeFilter.setCapping(true)
   tubeFilter.setNumberOfSides(16)
-  tubeFilter.setRadius(label.tubeRadius || 0.5)
+  // tubeFilter.setRadius(label.tubeRadius || 0.5) // Remove constant radius setting
+  tubeFilter.setVaryRadius(VaryRadius.VARY_RADIUS_BY_SCALAR) // Use imported enum value
   tubeFilter.setInputData(polyData)
+  // Specify which scalar array to use for varying the radius
+  tubeFilter.setInputArrayToProcess(0, 'Radius', 'PointData', 'Scalars')
 
   // Create mapper and actor
   const mapper = vtkMapper.newInstance()
   mapper.setInputConnection(tubeFilter.getOutputPort())
+  mapper.setScalarVisibility(false) // Disable coloring by scalar
 
   const actor = vtkActor.newInstance()
   actor.setMapper(mapper)
@@ -134,6 +170,26 @@ export function updateLabelsVisibility(visualization: Visualization): void {
     if (label.vtkActor) {
       const isVisible = visualization.visible && label.visible
       label.vtkActor.setVisibility(isVisible)
+    }
+  }
+}
+
+/**
+ * Updates visibility of labels based on a list of selected filenames.
+ * @param visualization - The visualization containing labels
+ * @param selectedFilenames - An array of filenames for labels that should be visible
+ */
+export function updateLabelSelectionVisibility(
+  visualization: Visualization,
+  selectedFilenames: string[],
+): void {
+  if (!visualization.labels) return
+
+  for (const label of visualization.labels) {
+    if (label.vtkActor) {
+      const isSelected = selectedFilenames.includes(label.filename)
+      // Only make visible if the label is selected AND the overall visualization is visible
+      label.vtkActor.setVisibility(isSelected && visualization.visible)
     }
   }
 }

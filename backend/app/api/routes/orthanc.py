@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from pyorthanc import (
     Instance,
     Series,
@@ -29,6 +29,7 @@ from app.core.vtk_utils import (
     create_vtk_image_from_volume,
     write_vtk_image_to_vti,
 )
+from app.schemas.label import Centerline
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -157,6 +158,11 @@ async def get_series_label_content(series_id: str, label_filename: str):
         series_info = series.get_main_information()
         # Use DICOM UIDs for robust path construction
         series_uid = series_info.get("MainDicomTags", {}).get("SeriesInstanceUID")
+        instances = series.instances
+
+        # Get all DICOM datasets
+        dicom_datasets = [instance.get_pydicom() for instance in instances]
+        ct_handler = VolumeDicomHandler(dicom_datasets)
 
         if not series_uid:
             raise HTTPException(
@@ -180,10 +186,21 @@ async def get_series_label_content(series_id: str, label_filename: str):
             label_file_path.suffix.lower() == ".json"
             or label_file_path.suffix.lower() == ".mrk"
         ):  # Handle .mrk.json too if needed
-            label = SlicerMarkupsMrkJson(label_file_path).control_points
-            label["position"] = label["position"].tolist()
-            label["orientation"] = label["orientation"].tolist()
-            return JSONResponse(content=label)
+            data = SlicerMarkupsMrkJson(label_file_path).control_points
+            data["position"] -= ct_handler.volume_center_position_mm
+            data["radius"] = np.linspace(0.5, 3, len(data["position"])).tolist()
+            data["position"] = data["position"].tolist()
+            data["orientation"] = data["orientation"].tolist()
+            label = Centerline(
+                filename=label_filename,
+                data=data,
+                visible=True,
+                color=[0.5, 0.5, 1.0],
+                opacity=1.0,
+                id=label_filename,
+                seriesId=series_id,
+            )
+            return label.model_dump()
         else:
             # For non-JSON files, you might return differently, e.g., FileResponse
             # For now, raise an error if it's not recognized JSON
@@ -217,7 +234,7 @@ async def _process_volume_data(instances):
 
     # Create VTK image data using the centralized utility function
     vtk_image = create_vtk_image_from_volume(
-        ct_handler, center_at_origin=False, column_major=True
+        ct_handler, center_at_origin=True, column_major=True
     )
 
     # Write to VTI format

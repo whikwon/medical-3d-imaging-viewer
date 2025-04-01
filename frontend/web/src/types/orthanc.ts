@@ -16,7 +16,6 @@ export interface Patient {
   IsStable: boolean
   LastUpdate: string
   MainDicomTags: DicomTags
-  PatientMainDicomTags: DicomTags
   Studies: string[]
   StudiesCount: number
   Type: string
