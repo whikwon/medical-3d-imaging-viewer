@@ -31,8 +31,7 @@ export interface Viewport {
  * Interface for a single label associated with a visualization.
  */
 
-// Define a specific type for centerline data
-export interface CenterlineData {
+export interface CoronaryArteryData {
   position: number[][]
   orientation: number[][] // Or a more specific type if needed
   radius: number[]
@@ -42,9 +41,8 @@ export interface Label {
   id: string
   filename: string
   seriesId: string
-  type: 'centerline' | 'fiducial' | 'segmentation' | 'unknown'
-  // Use a more specific type for data, especially for centerlines
-  data: CenterlineData | unknown // Allow other types for other labels
+  type: 'coronaryArtery'
+  data: CoronaryArteryData | unknown // Allow other types for other labels
   visible: boolean
   color?: [number, number, number]
   opacity?: number

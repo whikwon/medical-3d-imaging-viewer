@@ -29,7 +29,7 @@ from app.core.vtk_utils import (
     create_vtk_image_from_volume,
     write_vtk_image_to_vti,
 )
-from app.schemas.label import Centerline
+from app.schemas.label import CoronaryArtery
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -191,7 +191,7 @@ async def get_series_label_content(series_id: str, label_filename: str):
             data["radius"] = np.linspace(0.5, 3, len(data["position"])).tolist()
             data["position"] = data["position"].tolist()
             data["orientation"] = data["orientation"].tolist()
-            label = Centerline(
+            label = CoronaryArtery(
                 filename=label_filename,
                 data=data,
                 visible=True,

@@ -10,42 +10,41 @@ import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper'
 import vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer'
 
 /**
- * Draws a centerline as a tube in the renderer.
+ * Draws a coronary artery as a tube in the renderer.
  * @param renderer - The VTK renderer
- * @param label - The centerline label object
+ * @param label - The coronary artery label object
  * @returns The created VTK actor
  */
-export function drawCenterline(renderer: vtkRenderer, label: Label): vtkActor {
-  // Type guard to ensure data is CenterlineData
+export function drawCoronaryArtery(renderer: vtkRenderer, label: Label): vtkActor {
   if (
-    label.type !== 'centerline' ||
+    label.type !== 'coronaryArtery' ||
     !label.data ||
     typeof label.data !== 'object' ||
     !('position' in label.data) ||
     !('radius' in label.data)
   ) {
-    throw new Error('Invalid label data for centerline: missing position or radius')
+    throw new Error('Invalid label data for coronary artery: missing position or radius')
   }
   // Cast after check for type safety
-  const centerlineData = label.data as { position: number[][]; radius: number[] }
+  const coronaryArteryData = label.data as { position: number[][]; radius: number[] }
 
   // Create points and add them to a vtkPoints object
   const points = vtkPoints.newInstance()
 
-  const centerlinePoints = centerlineData.position // Use checked data
-  const centerlineRadii = centerlineData.radius // Use checked data
+  const coronaryArteryPoints = coronaryArteryData.position // Use checked data
+  const coronaryArteryRadii = coronaryArteryData.radius // Use checked data
 
   if (
-    !Array.isArray(centerlinePoints) ||
-    !Array.isArray(centerlineRadii) || // Check if radii is an array
-    centerlinePoints.length === 0 ||
-    centerlinePoints.length !== centerlineRadii.length // Ensure lengths match
+    !Array.isArray(coronaryArteryPoints) ||
+    !Array.isArray(coronaryArteryRadii) || // Check if radii is an array
+    coronaryArteryPoints.length === 0 ||
+    coronaryArteryPoints.length !== coronaryArteryRadii.length // Ensure lengths match
   ) {
-    throw new Error('Invalid centerline data: expected matching arrays of points and radii')
+    throw new Error('Invalid coronary artery data: expected matching arrays of points and radii')
   }
 
   // Add points to the vtkPoints object
-  for (const point of centerlinePoints) {
+  for (const point of coronaryArteryPoints) {
     if (Array.isArray(point) && point.length >= 3) {
       points.insertNextPoint(point[0], point[1], point[2])
     } else {
@@ -74,12 +73,11 @@ export function drawCenterline(renderer: vtkRenderer, label: Label): vtkActor {
   // Add radii as scalar data to the points
   const radiusData = vtkDataArray.newInstance({
     name: 'Radius',
-    values: Float32Array.from(centerlineRadii),
+    values: Float32Array.from(coronaryArteryRadii),
     numberOfComponents: 1, // Each radius is a single scalar value
   })
   polyData.getPointData().setScalars(radiusData)
 
-  // Use tube filter to create a tube along the centerline
   const tubeFilter = vtkTubeFilter.newInstance()
   tubeFilter.setCapping(true)
   tubeFilter.setNumberOfSides(16)
@@ -112,10 +110,10 @@ export function drawCenterline(renderer: vtkRenderer, label: Label): vtkActor {
 }
 
 /**
- * Updates an existing centerline visualization.
- * @param label - The centerline label object with an existing vtkActor
+ * Updates an existing coronary artery visualization.
+ * @param label - The coronary artery label object with an existing vtkActor
  */
-export function updateCenterline(label: Label): void {
+export function updateCoronaryArtery(label: Label): void {
   if (!label.vtkActor) return
 
   // Update color and opacity
@@ -151,8 +149,8 @@ export function drawLabelsForVisualization(visualization: Visualization): void {
   // Draw each label based on its type
   for (const label of visualization.labels) {
     if (label.visible) {
-      if (label.type === 'centerline') {
-        drawCenterline(renderer, label)
+      if (label.type === 'coronaryArtery') {
+        drawCoronaryArtery(renderer, label)
       }
       // Add support for other label types here as needed
     }

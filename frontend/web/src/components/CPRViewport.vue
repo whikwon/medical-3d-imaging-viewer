@@ -40,7 +40,7 @@
 import '@kitware/vtk.js/IO/Core/DataAccessHelper/HttpDataAccessHelper'
 import '@kitware/vtk.js/Rendering/Profiles/All'
 
-import type { VTKViewerInstance, Viewport } from '@/types/visualization'
+import type { CoronaryArteryData, VTKViewerInstance, Viewport } from '@/types/visualization'
 import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray'
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray'
 import { radiansFromDegrees } from '@kitware/vtk.js/Common/Core/Math'
@@ -73,7 +73,7 @@ const props = defineProps<{
   windowCenter: number
   vtkInstance: VTKViewerInstance
   viewports: Viewport[]
-  centerline: { position: number[]; orientation: number[] }
+  coronaryArteryData: CoronaryArteryData
 }>()
 
 defineEmits<{
@@ -107,7 +107,7 @@ const stretchViewport = ref<Viewport | null>(null)
 const crossViewport = ref<Viewport | null>(null)
 
 // Create VTK objects with 'any' type to bypass TypeScript issues
-const centerlinePolyData = ref<any>(vtkPolyData.newInstance())
+const coronaryArteryPolyData = ref<any>(vtkPolyData.newInstance())
 const widget = vtkResliceCursorWidget.newInstance({
   planes: [stretchPlane, crossPlane],
   behavior: widgetBehavior,
@@ -135,12 +135,12 @@ const reslice = vtkImageReslice.newInstance()
 const resliceMapper = vtkImageMapper.newInstance()
 const resliceActor = vtkImageSlice.newInstance()
 
-// Add plane and cutter for centerline intersection
+// Add plane and cutter for coronary artery intersection
 const cutPlane = vtkPlane.newInstance()
-const centerlineCutter = vtkCutter.newInstance()
-centerlineCutter.setCutFunction(cutPlane)
+const coronaryArteryCutter = vtkCutter.newInstance()
+coronaryArteryCutter.setCutFunction(cutPlane)
 const cutMapper = vtkMapper.newInstance()
-cutMapper.setInputConnection(centerlineCutter.getOutputPort())
+cutMapper.setInputConnection(coronaryArteryCutter.getOutputPort())
 const cutActor = vtkActor.newInstance()
 cutActor.setMapper(cutMapper)
 cutActor.getProperty().setLineWidth(2)
@@ -164,42 +164,42 @@ const cprManipulator = vtkCPRManipulator.newInstance({
 })
 const planeManipulator = vtkPlaneManipulator.newInstance()
 
-function setupCenterline() {
-  if (!props.centerline || !props.imageData) return
+function setupCoronaryArtery() {
+  if (!props.coronaryArteryData || !props.imageData) return
 
-  const centerline = centerlinePolyData.value
+  const coronaryArtery = coronaryArteryPolyData.value
 
   // Create points from position data
-  const centerlinePoints = Float32Array.from(props.centerline.position.flat())
-  const nPoints = centerlinePoints.length / 3
-  centerline.getPoints().setData(centerlinePoints, 3)
+  const coronaryArteryPoints = Float32Array.from(props.coronaryArteryData.position.flat())
+  const nPoints = coronaryArteryPoints.length / 3
+  coronaryArtery.getPoints().setData(coronaryArteryPoints, 3)
 
-  // Set polylines of the centerline
-  const centerlineLines = new Uint16Array(1 + nPoints)
-  centerlineLines[0] = nPoints
+  // Set polylines of the coronary artery
+  const coronaryArteryLines = new Uint16Array(1 + nPoints)
+  coronaryArteryLines[0] = nPoints
   for (let i = 0; i < nPoints; ++i) {
-    centerlineLines[i + 1] = i
+    coronaryArteryLines[i + 1] = i
   }
-  centerline.getLines().setData(centerlineLines)
+  coronaryArtery.getLines().setData(coronaryArteryLines)
 
   // Create orientation tensor array
-  centerline.getPointData().setTensors(
+  coronaryArtery.getPointData().setTensors(
     vtkDataArray.newInstance({
       name: 'Orientation',
       numberOfComponents: 16,
-      values: Float32Array.from(props.centerline.orientation.flat(Infinity)),
+      values: Float32Array.from(props.coronaryArteryData.orientation.flat(Infinity)),
     }),
   )
-  centerline.modified()
+  coronaryArtery.modified()
 
   // Configure TubeFilter
-  tubeFilter.setInputData(centerline)
+  tubeFilter.setInputData(coronaryArtery)
   tubeFilter.setInputArrayToProcess(0, 'Radius', 'PointData', 'Scalars')
 
   // Connect TubeFilter output to Cutter input
-  centerlineCutter.setInputConnection(tubeFilter.getOutputPort())
+  coronaryArteryCutter.setInputConnection(tubeFilter.getOutputPort())
 
-  return centerline
+  return coronaryArtery
 }
 
 // Core update function for view synchronization
@@ -241,10 +241,10 @@ function updateDistanceAndDirection() {
   planeManipulator.setUserOrigin(worldWidgetCenter)
   planeManipulator.setUserNormal(worldNormal)
 
-  // Update cut plane for centerline intersection
+  // Update cut plane for coronary artery intersection
   cutPlane.setOrigin(worldWidgetCenter[0], worldWidgetCenter[1], worldWidgetCenter[2])
   cutPlane.setNormal(worldNormal[0], worldNormal[1], worldNormal[2])
-  const cutOutput = centerlineCutter.getOutputData()
+  const cutOutput = coronaryArteryCutter.getOutputData()
 
   // Update intersection points visualization
   const points = cutOutput.getPoints()
@@ -359,12 +359,12 @@ function initializeViewer() {
   crossWidgetManager.value.setRenderer(crossViewport.value.renderer)
   crossWidgetInstance = crossWidgetManager.value.addWidget(widget, crossViewType)
 
-  // Setup centerline
-  const centerlineData = setupCenterline()
+  // Setup coronary artery
+  const coronaryArteryData = setupCoronaryArtery()
 
   // Configure CPR mapper
   cprMapper.setInputData(props.imageData, 0)
-  cprMapper.setInputData(centerlineData, 1)
+  cprMapper.setInputData(coronaryArteryData, 1)
   cprMapper.setWidth(400)
 
   // Apply window/level
@@ -417,7 +417,7 @@ function initializeViewer() {
     cprMapper.useStraightenedMode()
   }
 
-  // Add centerline intersection actor to cross view
+  // Add coronary artery intersection actor to cross view
   crossViewport.value.renderer.addActor(cutActor)
 
   // Configure and add intersection points actor
@@ -532,9 +532,8 @@ onBeforeUnmount(() => {
     reslice.delete()
   }
 
-  // Delete centerline polydata
-  if (centerlinePolyData.value) {
-    centerlinePolyData.value.delete()
+  if (coronaryArteryPolyData.value) {
+    coronaryArteryPolyData.value.delete()
   }
 
   // Delete manipulators
@@ -555,8 +554,8 @@ onBeforeUnmount(() => {
     cutMapper.delete()
   }
 
-  if (centerlineCutter) {
-    centerlineCutter.delete()
+  if (coronaryArteryCutter) {
+    coronaryArteryCutter.delete()
   }
 
   if (cutPlane) {
@@ -580,7 +579,7 @@ onBeforeUnmount(() => {
   }
 
   // Clear references to avoid memory leaks
-  centerlinePolyData.value = null
+  coronaryArteryPolyData.value = null
   stretchWidgetManager.value = null
   crossWidgetManager.value = null
   stretchWidgetInstance = null

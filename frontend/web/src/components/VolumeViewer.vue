@@ -50,13 +50,13 @@
 
     <!-- CPR Viewport Placeholder - Logic to be moved here later -->
     <CPRViewport
-      v-if="showCPRViewport && cprImageData && vtkInstance && centerlineData"
+      v-if="showCPRViewport && cprImageData && vtkInstance && coronaryArteryData"
       :image-data="cprImageData"
       :window-width="windowWidth"
       :window-center="windowCenter"
       :vtk-instance="vtkInstance"
       :viewports="cprViewports"
-      :centerline="centerlineData"
+      :coronaryArteryData="coronaryArteryData"
       @close="closeCPRViewport"
     />
 
@@ -71,7 +71,7 @@ import { computed, ref, watch, type PropType } from 'vue'
 
 // Import types
 import type {
-  CenterlineData,
+  CoronaryArteryData,
   Viewport,
   Visualization,
   VTKViewerInstance,
@@ -148,7 +148,7 @@ const mprViewports = ref<Viewport[]>([])
 const showCPRViewport = ref(false)
 const cprImageData = ref<vtkImageData | null>(null)
 const cprViewports = ref<Viewport[]>([])
-const centerlineData = ref<CenterlineData | null>(null)
+const coronaryArteryData = ref<CoronaryArteryData | null>(null)
 
 // Watch when this specific visualization becomes active
 watch(
@@ -269,31 +269,15 @@ async function openCPRViewport() {
   console.log('Opening CPR Viewport for:', props.visualization.seriesId)
 
   try {
-    // Find centerline data from labels
-    const centerlineLabels =
-      props.visualization.labels?.filter((label) => label.type === 'centerline') || []
+    const coronaryArteryLabels =
+      props.visualization.labels?.filter((label) => label.type === 'coronaryArtery') || []
 
-    if (centerlineLabels.length === 0) {
-      alert('No centerline data available for this series')
+    if (coronaryArteryLabels.length === 0) {
+      alert('No coronary artery data available for this series')
       return
     } else {
-      const centerlineLabel = centerlineLabels[0]
-      const labelData = centerlineLabel.data as CenterlineData | undefined
-      if (
-        !labelData ||
-        !Array.isArray(labelData.position) ||
-        !Array.isArray(labelData.orientation)
-      ) {
-        alert('Invalid centerline data format in label')
-        centerlineData.value = null
-        return
-      }
-      // TEMP FIX for type mismatch - should fix CenterlineData interface
-      centerlineData.value = {
-        position: labelData.position,
-        orientation: labelData.orientation,
-        radius: labelData.radius ?? [], // Provide default if radius is optional/missing
-      }
+      const coronaryArteryLabel = coronaryArteryLabels[0]
+      coronaryArteryData.value = coronaryArteryLabel.data as CoronaryArteryData
     }
 
     cprImageData.value = props.visualization.data
@@ -323,7 +307,7 @@ function closeCPRViewport() {
     cprViewports.value = []
   }
   cprImageData.value = null
-  centerlineData.value = null // Clear centerline data
+  coronaryArteryData.value = null
 
   // Signal parent to show main viewport and reset interactor
   if (props.vtkInstance && props.visualization.viewport?.container) {

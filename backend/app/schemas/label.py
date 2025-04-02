@@ -3,8 +3,8 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class Centerline(BaseModel):
-    type: str = "centerline"
+class CoronaryArtery(BaseModel):
+    type: str = "coronaryArtery"
     filename: str
     data: dict[str, Any]
     visible: bool
