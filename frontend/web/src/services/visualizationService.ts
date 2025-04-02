@@ -19,6 +19,8 @@ interface VolumeControlParams {
   windowCenterMin: number
   windowCenterMax: number
   windowWidthMax: number
+  windowCenter: number
+  windowWidth: number
 }
 
 /**
@@ -120,6 +122,8 @@ export async function loadVolumeVisualization(
         windowCenterMin: Math.floor(dataRange[0]),
         windowCenterMax: Math.ceil(dataRange[1]),
         windowWidthMax: Math.ceil(dataRange[1] - dataRange[0]),
+        windowCenter: windowCenter,
+        windowWidth: windowWidth,
       },
     }
   } finally {

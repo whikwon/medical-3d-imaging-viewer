@@ -2,11 +2,9 @@
 
 <template>
   <div class="mpr-container">
-    <div class="mpr-view-container">
-      <div class="mpr-controls">
-        <button @click="$emit('close')" class="close-button">×</button>
-        <button @click="resetView" class="action-button">Reset View</button>
-      </div>
+    <div class="mpr-controls">
+      <button @click="$emit('close')" class="close-button">×</button>
+      <button @click="resetView" class="action-button">Reset View</button>
     </div>
   </div>
 </template>
@@ -38,15 +36,6 @@ import {
 } from '@kitware/vtk.js/Widgets/Widgets3D/ResliceCursorWidget/Constants'
 
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-
-function createRGBStringFromRGBValues(rgb: number[]) {
-  if (rgb.length !== 3) {
-    return 'rgb(0, 0, 0)'
-  }
-  return `rgb(${(rgb[0] * 255).toString()}, ${(rgb[1] * 255).toString()}, ${(
-    rgb[2] * 255
-  ).toString()})`
-}
 
 interface ViewObject {
   renderWindow: vtkRenderWindow
@@ -433,13 +422,7 @@ defineEmits<{
   width: 100%;
   height: 100%;
   z-index: 1000;
-  pointer-events: none;
-}
-
-.mpr-view-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
+  pointer-events: none !important;
 }
 
 .mpr-controls {

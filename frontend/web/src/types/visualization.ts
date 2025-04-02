@@ -63,6 +63,7 @@ export interface Visualization {
   data: vtkImageData
   viewport?: Viewport
   labels?: Label[]
+  controlParams?: any // Added to store initial control parameters
 }
 
 export interface VTKViewerInstance {

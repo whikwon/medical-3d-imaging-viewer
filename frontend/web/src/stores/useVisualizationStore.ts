@@ -1,9 +1,17 @@
 import { drawLabelsForVisualization, removeLabel } from '@/services/labelService'
-import { fetchAvailableLabels, fetchLabelContent } from '@/services/orthancService'
-import { removeVisualization, setVisualizationVisibility } from '@/services/visualizationService'
-import type { Label, Visualization, VTKViewerInstance } from '@/types/visualization'; // Correct import path & Added Label
-import { defineStore } from 'pinia'
+import { fetchAvailableLabels, fetchLabelContent, fetchSeriesData } from '@/services/orthancService'
+import {
+  loadMultiframeVisualization,
+  loadVolumeVisualization,
+  removeVisualization,
+  setVisualizationVisibility,
+} from '@/services/visualizationService'
+import type { Series } from '@/types/orthanc'; // Added Series type
+import type { Label, Viewport, Visualization, VTKViewerInstance } from '@/types/visualization'; // Correct import path & Added Label
+import type vtkRenderer from '@kitware/vtk.js/Rendering/Core/Renderer'; // Added vtkRenderer type
+import { defineStore, storeToRefs } from 'pinia'
 import { computed, ref, type Ref } from 'vue'
+import { usePatientStudyStore } from './usePatientStudyStore'; // Added Patient Study Store
 
 export const useVisualizationStore = defineStore('visualization', () => {
   // --- State ---
@@ -114,6 +122,110 @@ export const useVisualizationStore = defineStore('visualization', () => {
 
   function closeOverlay(): void {
     showControlOverlay.value = false
+  }
+
+  // --- NEW Action for Loading Series ---
+  async function loadAndAddVisualization(
+    seriesId: string,
+    renderer: vtkRenderer,
+    viewport: Viewport, // Need viewport for label drawing association for now
+  ): Promise<void> {
+    const patientStudyStore = usePatientStudyStore()
+    const { studies } = storeToRefs(patientStudyStore)
+
+    // Check if already loaded
+    const alreadyLoaded = visualizations.value.some((vis) => vis.seriesId === seriesId)
+    if (alreadyLoaded) {
+      const index = visualizations.value.findIndex((vis) => vis.seriesId === seriesId)
+      if (index !== -1) {
+        setActiveVisualization(index)
+      }
+      // Notify store loading is complete (even though it was already loaded)
+      patientStudyStore.setSeriesLoadingCompleteAction(seriesId, true)
+      return
+    }
+
+    // Find series details
+    let seriesToLoad: Series | null = null
+    for (const study of studies.value) {
+      const foundSeries = study.series?.find((s) => s.ID === seriesId)
+      if (foundSeries) {
+        seriesToLoad = foundSeries
+        break
+      }
+    }
+
+    if (!seriesToLoad) {
+      console.error(`Store: Could not find series details for ID ${seriesId}.`)
+      patientStudyStore.setSeriesLoadingCompleteAction(seriesId, false)
+      // Consider throwing an error or setting an error state in this store
+      return
+    }
+
+    let success = false
+    try {
+      // Fetch raw data
+      const result = await fetchSeriesData(seriesId)
+      const {
+        data: vtiData,
+        windowWidth: receivedWindowWidth,
+        windowCenter: receivedWindowCenter,
+      } = result
+
+      let loadedVisResult: Awaited<
+        ReturnType<typeof loadVolumeVisualization | typeof loadMultiframeVisualization>
+      > | null = null
+
+      // Create visualization based on modality
+      if (seriesToLoad.MainDicomTags.Modality === 'XA') {
+        loadedVisResult = await loadMultiframeVisualization(
+          renderer,
+          seriesId,
+          seriesToLoad,
+          vtiData,
+          receivedWindowWidth,
+          receivedWindowCenter,
+        )
+      } else if (seriesToLoad.MainDicomTags.Modality === 'CT') {
+        loadedVisResult = await loadVolumeVisualization(
+          renderer,
+          seriesId,
+          seriesToLoad,
+          vtiData,
+          receivedWindowWidth,
+          receivedWindowCenter,
+        )
+      } else {
+        throw new Error(`Unsupported modality: ${seriesToLoad.MainDicomTags.Modality}`)
+      }
+
+      // Store viewport reference and control parameters with the visualization
+      loadedVisResult.visualization.viewport = viewport
+      // Assuming load... functions return { visualization: ..., controlParams: ... }
+      // We'll store controlParams directly on the visualization object
+      // Modify Visualization type if needed to accommodate this
+      ;(loadedVisResult.visualization as any).controlParams = loadedVisResult.controlParams
+
+      // Add the successfully created visualization to the store
+      addVisualization(loadedVisResult.visualization)
+
+      // Note: Label drawing is NOT done here. It will be triggered by the component
+      //       watching the activeVisualization or its labels.
+
+      success = true
+    } catch (error: unknown) {
+      console.error(`Store: Error loading series data for ${seriesId}:`, error)
+      // Maybe set an error state in this store?
+      success = false
+      // Rethrow or handle more gracefully?
+      if (error instanceof Error) {
+        alert('Store: Failed to visualize series: ' + error.message)
+      } else {
+        alert('Store: Failed to visualize series: unknown error')
+      }
+    } finally {
+      patientStudyStore.setSeriesLoadingCompleteAction(seriesId, success)
+    }
   }
 
   // --- Label Management Actions ---
@@ -261,5 +373,7 @@ export const useVisualizationStore = defineStore('visualization', () => {
     removeLabelFromVisualizationAction,
     fetchAvailableLabelsAction,
     toggleLabelSelectionAction,
+    // New loading action
+    loadAndAddVisualization,
   }
 })

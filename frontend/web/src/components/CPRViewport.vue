@@ -1,37 +1,36 @@
 <!-- https://kitware.github.io/vtk-js/examples/ImageCPRMapper.html -->
+<!-- https://kitware.github.io/vtk-js/examples/Cutter.html -->
 
 <template>
   <div class="cpr-container">
-    <div class="cpr-view-container">
-      <div class="cpr-controls">
-        <button @click="$emit('close')" class="close-button">×</button>
-        <div class="control-group">
-          <label for="projectionMode">Projection Mode:</label>
-          <select id="projectionMode" v-model="projectionMode" class="control-select">
-            <option v-for="mode in projectionModes" :key="mode" :value="mode">
-              {{ formatProjectionMode(mode) }}
-            </option>
-          </select>
-        </div>
-        <div class="control-group">
-          <label for="thickness">Thickness:</label>
-          <input
-            id="thickness"
-            v-model="thickness"
-            type="range"
-            min="0"
-            max="0.5"
-            step="0.01"
-            class="control-range"
-          />
-        </div>
-        <div class="control-group">
-          <label for="displayMode">Mode:</label>
-          <select id="displayMode" v-model="displayMode" class="control-select">
-            <option value="straightened">Straightened</option>
-            <option value="stretched">Stretched</option>
-          </select>
-        </div>
+    <div class="cpr-controls">
+      <button @click="$emit('close')" class="close-button">×</button>
+      <div class="control-group">
+        <label for="projectionMode">Projection Mode:</label>
+        <select id="projectionMode" v-model="projectionMode" class="control-select">
+          <option v-for="mode in projectionModes" :key="mode" :value="mode">
+            {{ formatProjectionMode(mode) }}
+          </option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="thickness">Thickness:</label>
+        <input
+          id="thickness"
+          v-model="thickness"
+          type="range"
+          min="0"
+          max="0.5"
+          step="0.01"
+          class="control-range"
+        />
+      </div>
+      <div class="control-group">
+        <label for="displayMode">Mode:</label>
+        <select id="displayMode" v-model="displayMode" class="control-select">
+          <option value="straightened">Straightened</option>
+          <option value="stretched">Stretched</option>
+        </select>
       </div>
     </div>
   </div>
@@ -42,14 +41,21 @@ import '@kitware/vtk.js/IO/Core/DataAccessHelper/HttpDataAccessHelper'
 import '@kitware/vtk.js/Rendering/Profiles/All'
 
 import type { VTKViewerInstance, Viewport } from '@/types/visualization'
+import vtkCellArray from '@kitware/vtk.js/Common/Core/CellArray'
 import vtkDataArray from '@kitware/vtk.js/Common/Core/DataArray'
 import { radiansFromDegrees } from '@kitware/vtk.js/Common/Core/Math'
+import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane'
 import vtkPolyData from '@kitware/vtk.js/Common/DataModel/PolyData'
+import vtkCutter from '@kitware/vtk.js/Filters/Core/Cutter'
+import vtkTubeFilter from '@kitware/vtk.js/Filters/General/TubeFilter'
+import { VaryRadius } from '@kitware/vtk.js/Filters/General/TubeFilter/Constants'
 import vtkImageReslice from '@kitware/vtk.js/Imaging/Core/ImageReslice'
+import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor'
 import vtkImageCPRMapper from '@kitware/vtk.js/Rendering/Core/ImageCPRMapper'
 import { ProjectionMode } from '@kitware/vtk.js/Rendering/Core/ImageCPRMapper/Constants'
 import vtkImageMapper from '@kitware/vtk.js/Rendering/Core/ImageMapper'
 import vtkImageSlice from '@kitware/vtk.js/Rendering/Core/ImageSlice'
+import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper'
 import vtkWidgetManager from '@kitware/vtk.js/Widgets/Core/WidgetManager'
 import { ViewTypes } from '@kitware/vtk.js/Widgets/Core/WidgetManager/Constants'
 import vtkCPRManipulator from '@kitware/vtk.js/Widgets/Manipulators/CPRManipulator'
@@ -129,6 +135,29 @@ const reslice = vtkImageReslice.newInstance()
 const resliceMapper = vtkImageMapper.newInstance()
 const resliceActor = vtkImageSlice.newInstance()
 
+// Add plane and cutter for centerline intersection
+const cutPlane = vtkPlane.newInstance()
+const centerlineCutter = vtkCutter.newInstance()
+centerlineCutter.setCutFunction(cutPlane)
+const cutMapper = vtkMapper.newInstance()
+cutMapper.setInputConnection(centerlineCutter.getOutputPort())
+const cutActor = vtkActor.newInstance()
+cutActor.setMapper(cutMapper)
+cutActor.getProperty().setLineWidth(2)
+
+// Add TubeFilter
+const tubeFilter = vtkTubeFilter.newInstance({
+  numberOfSides: 12,
+  capping: false,
+})
+tubeFilter.setVaryRadius(VaryRadius.VARY_RADIUS_BY_SCALAR)
+tubeFilter.setRadiusFactor(1)
+
+// Intersection points visualization
+const intersectionPointsPolyData = ref<any>(vtkPolyData.newInstance())
+const intersectionMapper = vtkMapper.newInstance()
+const intersectionActor = vtkActor.newInstance()
+
 // Manipulators
 const cprManipulator = vtkCPRManipulator.newInstance({
   cprActor,
@@ -162,6 +191,13 @@ function setupCenterline() {
     }),
   )
   centerline.modified()
+
+  // Configure TubeFilter
+  tubeFilter.setInputData(centerline)
+  tubeFilter.setInputArrayToProcess(0, 'Radius', 'PointData', 'Scalars')
+
+  // Connect TubeFilter output to Cutter input
+  centerlineCutter.setInputConnection(tubeFilter.getOutputPort())
 
   return centerline
 }
@@ -204,6 +240,35 @@ function updateDistanceAndDirection() {
   // Update plane manipulator - use vec3 values directly
   planeManipulator.setUserOrigin(worldWidgetCenter)
   planeManipulator.setUserNormal(worldNormal)
+
+  // Update cut plane for centerline intersection
+  cutPlane.setOrigin(worldWidgetCenter[0], worldWidgetCenter[1], worldWidgetCenter[2])
+  cutPlane.setNormal(worldNormal[0], worldNormal[1], worldNormal[2])
+  const cutOutput = centerlineCutter.getOutputData()
+
+  // Update intersection points visualization
+  const points = cutOutput.getPoints()
+  if (points && points.getNumberOfPoints() > 0) {
+    intersectionPointsPolyData.value.setPoints(points)
+    const numPoints = points.getNumberOfPoints()
+    // Create a vertex cell array for the points
+    const vertsData = new Uint16Array(numPoints + 1)
+    vertsData[0] = numPoints // Number of points in the cell
+    for (let i = 0; i < numPoints; i++) {
+      vertsData[i + 1] = i // Point index
+    }
+    const cellArray = vtkCellArray.newInstance({ values: vertsData })
+    intersectionPointsPolyData.value.setVerts(cellArray) // Set the vertices cell array
+    intersectionPointsPolyData.value.modified() // Notify that the polydata has changed
+    intersectionActor.setVisibility(true) // Ensure actor is visible
+  } else {
+    // If no points, clear the polydata and hide the actor
+    intersectionPointsPolyData.value.getPoints()?.setData([]) // Clear points data
+    intersectionPointsPolyData.value.getVerts()?.setData([]) // Clear verts data
+    intersectionPointsPolyData.value.modified()
+    intersectionActor.setVisibility(false) // Hide actor
+    console.log('No intersection points found.')
+  }
 
   updateState(widgetState, widget.getScaleInPixels(), widget.getRotationHandlePosition())
 
@@ -351,6 +416,17 @@ function initializeViewer() {
   } else {
     cprMapper.useStraightenedMode()
   }
+
+  // Add centerline intersection actor to cross view
+  crossViewport.value.renderer.addActor(cutActor)
+
+  // Configure and add intersection points actor
+  intersectionMapper.setInputData(intersectionPointsPolyData.value)
+  intersectionActor.setMapper(intersectionMapper)
+  intersectionActor.getProperty().setPointSize(3) // Set point size
+  intersectionActor.getProperty().setColor(1, 0, 0) // Set color (e.g., red)
+  intersectionActor.setVisibility(false) // Initially hidden until points are available
+  crossViewport.value.renderer.addActor(intersectionActor)
 }
 
 // Initialize on mount
@@ -470,6 +546,39 @@ onBeforeUnmount(() => {
     planeManipulator.delete()
   }
 
+  // Clean up additional objects
+  if (cutActor) {
+    cutActor.delete()
+  }
+
+  if (cutMapper) {
+    cutMapper.delete()
+  }
+
+  if (centerlineCutter) {
+    centerlineCutter.delete()
+  }
+
+  if (cutPlane) {
+    cutPlane.delete()
+  }
+
+  // Delete TubeFilter
+  if (tubeFilter) {
+    tubeFilter.delete()
+  }
+
+  // Delete intersection points visualization objects
+  if (intersectionActor) {
+    intersectionActor.delete()
+  }
+  if (intersectionMapper) {
+    intersectionMapper.delete()
+  }
+  if (intersectionPointsPolyData.value) {
+    intersectionPointsPolyData.value.delete()
+  }
+
   // Clear references to avoid memory leaks
   centerlinePolyData.value = null
   stretchWidgetManager.value = null
@@ -478,6 +587,8 @@ onBeforeUnmount(() => {
   crossWidgetInstance = null
   stretchViewport.value = null
   crossViewport.value = null
+  // Clear intersection points refs
+  intersectionPointsPolyData.value = null
 })
 </script>
 
@@ -489,13 +600,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   z-index: 1000;
-  pointer-events: none;
-}
-
-.cpr-view-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
+  pointer-events: none !important;
 }
 
 .cpr-controls {
