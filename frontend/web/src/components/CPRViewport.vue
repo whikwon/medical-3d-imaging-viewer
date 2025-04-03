@@ -65,6 +65,11 @@ import widgetBehavior from '@kitware/vtk.js/Widgets/Widgets3D/ResliceCursorWidge
 import { updateState } from '@kitware/vtk.js/Widgets/Widgets3D/ResliceCursorWidget/helpers'
 import { mat3, mat4, vec3 } from 'gl-matrix'
 
+import {
+  cleanupViewportInteraction,
+  registerWidget,
+  setupViewportInteraction,
+} from '@/services/viewportInteractionService'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps<{
@@ -85,6 +90,7 @@ const stretchPlane = 'Y'
 const crossPlane = 'Z'
 const stretchViewType = ViewTypes.XZ_PLANE
 const crossViewType = ViewTypes.XY_PLANE
+const crossViewZoom = 1.5
 
 // Control states with reactive refs
 const projectionMode = ref<string>('MAX')
@@ -328,6 +334,23 @@ function initializeViewer() {
   stretchViewport.value = props.viewports[0] // Main CPR view
   crossViewport.value = props.viewports[1] // Cross-section view
 
+  // Set up viewport interactions
+  if (stretchViewport.value.container) {
+    setupViewportInteraction(
+      stretchViewport.value.container,
+      props.vtkInstance.interactor,
+      props.vtkInstance.imageInteractorStyle,
+    )
+  }
+
+  if (crossViewport.value.container) {
+    setupViewportInteraction(
+      crossViewport.value.container,
+      props.vtkInstance.interactor,
+      props.vtkInstance.imageInteractorStyle,
+    )
+  }
+
   props.vtkInstance.renderWindow.setNumberOfLayers(2)
   crossViewport.value.renderer.setLayer(1)
 
@@ -347,6 +370,9 @@ function initializeViewer() {
   widget.updateReslicePlane(reslice, crossViewType)
   resliceActor.setUserMatrix(reslice.getResliceAxes())
   widget.updateCameraPoints(crossViewport.value.renderer, crossViewType, true, true)
+
+  const crossCamera = crossViewport.value.renderer.getActiveCamera()
+  crossCamera.zoom(crossViewZoom)
 
   const widgetPlanes = widgetState.getPlanes()
   widgetState.setPlanes(widgetPlanes)
@@ -427,6 +453,15 @@ function initializeViewer() {
   intersectionActor.getProperty().setColor(1, 0, 0) // Set color (e.g., red)
   intersectionActor.setVisibility(false) // Initially hidden until points are available
   crossViewport.value.renderer.addActor(intersectionActor)
+
+  // Register widgets with the interaction manager
+  if (stretchWidgetInstance && stretchViewport.value.container) {
+    registerWidget(stretchViewport.value.container, stretchWidgetInstance)
+  }
+
+  if (crossWidgetInstance && crossViewport.value.container) {
+    registerWidget(crossViewport.value.container, crossWidgetInstance)
+  }
 }
 
 // Initialize on mount
@@ -492,6 +527,15 @@ watch(
 
 // Cleanup
 onBeforeUnmount(() => {
+  // Clean up viewport interactions
+  if (stretchViewport.value?.container) {
+    cleanupViewportInteraction(stretchViewport.value.container)
+  }
+
+  if (crossViewport.value?.container) {
+    cleanupViewportInteraction(crossViewport.value.container)
+  }
+
   if (stretchWidgetManager.value) {
     stretchWidgetManager.value.delete()
   }

@@ -35,15 +35,20 @@ import {
   xyzToViewType,
 } from '@kitware/vtk.js/Widgets/Widgets3D/ResliceCursorWidget/Constants'
 
+import {
+  cleanupViewportInteraction,
+  registerWidget,
+  setupViewportInteraction,
+} from '@/services/viewportInteractionService'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 interface ViewObject {
   renderWindow: vtkRenderWindow
   renderer: vtkRenderer
-  GLWindow: HTMLElement
+  container: HTMLElement
   interactor: vtkRenderWindowInteractor
   widgetManager: vtkWidgetManager
-  widgetInstance: any // VTK.js widget instance, difficult to type precisely
+  widgetInstance: vtkResliceCursorWidget | null
   reslice: vtkImageReslice
   resliceMapper: vtkImageMapper
   resliceActor: vtkImageSlice
@@ -122,7 +127,6 @@ watch(
 
 // Initialize VTK.js viewer - this now uses the parent's shared rendering context
 onMounted(() => {
-  console.log('onMounted MPRViewport')
   if (
     !props.vtkInstance ||
     !props.imageData ||
@@ -149,7 +153,7 @@ onMounted(() => {
     const obj: ViewObject = {
       renderWindow: props.vtkInstance.renderWindow,
       renderer: viewport.renderer,
-      GLWindow: props.vtkInstance.rootContainer, // This is used differently now
+      container: viewport.container,
       interactor: props.vtkInstance.interactor,
       widgetManager: vtkWidgetManager.newInstance(),
       widgetInstance: null, // Will set up later
@@ -158,6 +162,15 @@ onMounted(() => {
       resliceActor: vtkImageSlice.newInstance(),
       sphereActors: [],
       sphereSources: [],
+    }
+
+    // Setup viewport interaction using the new service
+    if (viewport.container) {
+      setupViewportInteraction(
+        viewport.container,
+        props.vtkInstance.interactor,
+        i < 3 ? props.vtkInstance.imageInteractorStyle : props.vtkInstance.trackballInteractorStyle,
+      )
     }
 
     obj.reslice.setSlabMode(slabMode.value)
@@ -199,7 +212,8 @@ onMounted(() => {
       obj.widgetInstance.setInfiniteLine(false)
 
       // Configure widget state lines and center
-      widgetState.getStatesWithLabel('line').forEach((state) => state.setScale3(4, 4, 300))
+      widgetState.getStatesWithLabel('sphere').forEach((handle) => handle.setScale1(10))
+      widgetState.getStatesWithLabel('line').forEach((state) => state.setScale3(2, 2, 200))
       widgetState.getStatesWithLabel('center').forEach((state) => state.setOpacity(128))
 
       obj.widgetInstance.setKeepOrthogonality(keepOrthogonality.value)
@@ -240,32 +254,38 @@ onMounted(() => {
     const viewType = xyzToViewType[i] as ViewType
 
     viewAttributes.value.forEach((v) => {
-      v.widgetInstance.onStartInteractionEvent(() => {
-        updateReslice({
-          viewType,
-          reslice,
-          actor: obj.resliceActor,
-          renderer: obj.renderer,
-          resetFocalPoint: false,
-          computeFocalPointOffset: true,
-          sphereSources: obj.sphereSources,
-        })
-      })
+      if (v.widgetInstance && obj.container) {
+        // Register the widget with the container for interaction management
+        registerWidget(obj.container, v.widgetInstance)
 
-      v.widgetInstance.onInteractionEvent((interactionMethodName: string) => {
-        const canUpdateFocalPoint = interactionMethodName === InteractionMethodsName.RotateLine
-        const activeViewType = widgetState.getActiveViewType()
-        const computeFocalPointOffset = activeViewType === viewType || !canUpdateFocalPoint
-        updateReslice({
-          viewType,
-          reslice,
-          actor: obj.resliceActor,
-          renderer: obj.renderer,
-          resetFocalPoint: false,
-          computeFocalPointOffset,
-          sphereSources: obj.sphereSources,
+        // Setup widget event handlers directly
+        v.widgetInstance.onStartInteractionEvent(() => {
+          updateReslice({
+            viewType,
+            reslice,
+            actor: obj.resliceActor,
+            renderer: obj.renderer,
+            resetFocalPoint: false,
+            computeFocalPointOffset: true,
+            sphereSources: obj.sphereSources,
+          })
         })
-      })
+
+        v.widgetInstance.onInteractionEvent((interactionMethodName: string) => {
+          const canUpdateFocalPoint = interactionMethodName === InteractionMethodsName.RotateLine
+          const activeViewType = widgetState.getActiveViewType()
+          const computeFocalPointOffset = activeViewType === viewType || !canUpdateFocalPoint
+          updateReslice({
+            viewType,
+            reslice,
+            actor: obj.resliceActor,
+            renderer: obj.renderer,
+            resetFocalPoint: false,
+            computeFocalPointOffset,
+            sphereSources: obj.sphereSources,
+          })
+        })
+      }
     })
 
     updateReslice({
@@ -290,6 +310,14 @@ onMounted(() => {
 // Cleanup
 onBeforeUnmount(() => {
   console.log('Cleaning up MPR viewport')
+
+  // Clean up any registered viewport interactions
+  props.mprViewports.forEach((viewport) => {
+    if (viewport.container) {
+      cleanupViewportInteraction(viewport.container)
+    }
+  })
+
   // Remove all actors and widgets from the renderers
   viewAttributes.value.forEach((obj) => {
     if (obj.widgetInstance) {

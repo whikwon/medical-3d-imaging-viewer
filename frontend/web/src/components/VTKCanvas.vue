@@ -43,6 +43,10 @@ import { onBeforeUnmount, onMounted, ref, type Ref, watch } from 'vue'
 
 // Import our services and types
 import {
+  cleanupViewportInteraction,
+  setupViewportInteraction,
+} from '@/services/viewportInteractionService'
+import {
   cleanupViewer,
   createViewport,
   initializeViewer,
@@ -58,7 +62,6 @@ import SidePanel from '@/components/SidePanel.vue'
 
 // Import our new composable
 import { useControlPanelState } from '@/composables/useControlPanelState'
-import { useVTKInteractor } from '@/composables/useVTKInteractor'
 
 // Add back vtkImageData import
 
@@ -90,9 +93,6 @@ const { loadingSeriesId: storeLoadingSeriesId } = storeToRefs(patientStudyStore)
 const { visualizations, activeVisualization, activeVolume, activeMultiframe } =
   storeToRefs(visualizationStore)
 
-// Use our VTK interactor composable
-const { setupInteraction } = useVTKInteractor(vtkInstance)
-
 // Use our new control panel state composable
 const { cleanup: cleanupControlPanel } = useControlPanelState(vtkInstance)
 
@@ -110,15 +110,26 @@ onMounted(async () => {
       vtkInstance.value.renderWindow,
       vtkInstance.value.rootContainer,
       [0, 0, 1, 1],
-      vtkInstance.value.interactor,
-      vtkInstance.value.trackballInteractorStyle,
     )
+
+    // Use the interaction manager to setup interaction for the initial viewport
+    if (initialViewport.value.container && vtkInstance.value) {
+      setupViewportInteraction(
+        initialViewport.value.container,
+        vtkInstance.value.interactor,
+        vtkInstance.value.trackballInteractorStyle,
+      )
+    }
+
     setupAxesActor(initialViewport.value.renderer)
     setupOrientationWidget(vtkInstance.value.interactor)
   }
 })
 
 onBeforeUnmount(() => {
+  // Clean up interaction manager
+  cleanupViewportInteraction(initialViewport.value.container)
+
   // Clean up VTK.js objects on component unmount
   if (vtkInstance.value) {
     cleanupViewer(vtkInstance)
@@ -204,7 +215,6 @@ function selectVisualization(index: number) {
   // Setup interaction for the selected visualization
   if (vtkInstance.value.renderWindow) {
     const selectedVis = visualizations.value[index]
-    setupInteraction(selectedVis)
 
     // Draw any labels that exist for this visualization
     // This might eventually be triggered by watching the visualization store state

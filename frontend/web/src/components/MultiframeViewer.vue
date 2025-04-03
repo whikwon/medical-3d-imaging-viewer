@@ -39,7 +39,6 @@ import MultiframeControls from '@/components/MultiframeControls.vue'
 
 // Import composables and stores
 import { useControlPanelState } from '@/composables/useControlPanelState'
-import { useVTKInteractor } from '@/composables/useVTKInteractor'
 import { useVisualizationStore } from '@/stores/useVisualizationStore'
 
 // Import services
@@ -80,9 +79,6 @@ const {
   setMultiframeControlParams,
 } = useControlPanelState(computed(() => props.vtkInstance))
 
-// Get interaction setup function
-const { setupInteraction } = useVTKInteractor(computed(() => props.vtkInstance))
-
 // Watch when this specific visualization becomes active
 watch(
   () => props.isActive,
@@ -111,10 +107,6 @@ watch(
           `MultiframeViewer: Active multiframe ${props.visualization.seriesId} missing controlParams.`,
         )
       }
-
-      // --- Setup Interaction ---
-      console.log(`MultiframeViewer: Setting up interaction for ${props.visualization.seriesId}`)
-      setupInteraction(props.visualization)
 
       // --- Draw Labels ---
       if (props.visualization.labels && props.visualization.labels.length > 0) {

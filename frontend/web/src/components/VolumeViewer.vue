@@ -33,9 +33,7 @@
     </button>
 
     <!-- Add CPR button - Only show if neither MPR nor CPR is open -->
-    <button v-if="!showMPRViewport && !showCPRViewport" @click="openCPRViewport" class="cpr-btn">
-      Open CPR View
-    </button>
+    <button v-if="!showCPRViewport" @click="openCPRViewport" class="cpr-btn">Open CPR View</button>
 
     <!-- MPR Viewport Placeholder - Logic to be moved here later -->
     <MPRViewport
@@ -84,7 +82,6 @@ import VolumeControls from '@/components/VolumeControls.vue'
 
 // Import composables and stores
 import { useControlPanelState } from '@/composables/useControlPanelState'
-import { useVTKInteractor } from '@/composables/useVTKInteractor'
 import { useVisualizationStore } from '@/stores/useVisualizationStore'
 
 // Import services (for future MPR/CPR logic AND labels/interaction)
@@ -139,8 +136,6 @@ const {
   setVolumeControlParams,
 } = useControlPanelState(computed(() => props.vtkInstance)) // Pass vtkInstance as a computed ref
 
-const { setupInteraction } = useVTKInteractor(computed(() => props.vtkInstance))
-
 // MPR/CPR State (Placeholders - To be populated when logic moves here)
 const showMPRViewport = ref(false)
 const mprImageData = ref<vtkImageData | null>(null)
@@ -172,10 +167,6 @@ watch(
           `VolumeViewer: Active volume ${props.visualization.seriesId} missing controlParams.`,
         )
       }
-
-      // --- Setup Interaction ---
-      console.log(`VolumeViewer: Setting up interaction for ${props.visualization.seriesId}`)
-      setupInteraction(props.visualization)
 
       // --- Draw Labels ---
       if (props.visualization.labels && props.visualization.labels.length > 0) {

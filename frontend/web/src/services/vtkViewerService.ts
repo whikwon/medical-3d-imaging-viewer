@@ -63,8 +63,6 @@ export function createViewport(
   renderWindow: vtkRenderWindow,
   rootContainer: HTMLElement,
   viewport: [number, number, number, number],
-  interactor: vtkRenderWindowInteractor,
-  interactorStyle: vtkInteractorStyleImage | vtkInteractorStyleTrackballCamera,
 ): Viewport {
   // Create renderer
   const renderer = vtkRenderer.newInstance()
@@ -80,17 +78,6 @@ export function createViewport(
   rootContainer.appendChild(container)
   renderWindow.addRenderer(renderer)
 
-  container.addEventListener('pointerenter', () => {
-    const interactorContainer = interactor.getContainer()
-    if (interactorContainer !== container) {
-      if (interactorContainer) {
-        interactor.unbindEvents()
-      }
-      interactor.setInteractorStyle(interactorStyle)
-      interactor.bindEvents(container)
-    }
-  })
-
   return { renderer, container, viewport }
 }
 
@@ -98,15 +85,11 @@ export function createViewport(
  * Creates multiple viewports for MPR (Multiplanar Reconstruction)
  * @param renderWindow - The VTK render window
  * @param rootContainer - The root container element
- * @param layout - Layout type (e.g., '2x2', '1x3')
  * @returns Array of viewport objects
  */
 export function createMPRViewports(
   renderWindow: vtkRenderWindow,
   rootContainer: HTMLElement,
-  interactor: vtkRenderWindowInteractor,
-  imageInteractorStyle: vtkInteractorStyleImage,
-  trackballInteractorStyle: vtkInteractorStyleTrackballCamera,
 ): Viewport[] {
   const viewports: Viewport[] = []
 
@@ -114,24 +97,10 @@ export function createMPRViewports(
   const originalPosition = rootContainer.style.position
   rootContainer.style.position = 'relative'
 
-  viewports.push(
-    createViewport(renderWindow, rootContainer, [0, 0.5, 0.5, 1], interactor, imageInteractorStyle),
-  ) // Top left
-  viewports.push(
-    createViewport(renderWindow, rootContainer, [0.5, 0.5, 1, 1], interactor, imageInteractorStyle),
-  ) // Top right
-  viewports.push(
-    createViewport(renderWindow, rootContainer, [0, 0, 0.5, 0.5], interactor, imageInteractorStyle),
-  ) // Bottom left
-  viewports.push(
-    createViewport(
-      renderWindow,
-      rootContainer,
-      [0.5, 0, 1, 0.5],
-      interactor,
-      trackballInteractorStyle,
-    ),
-  ) // Bottom right
+  viewports.push(createViewport(renderWindow, rootContainer, [0, 0.75, 0.25, 1])) // Top left
+  viewports.push(createViewport(renderWindow, rootContainer, [0.25, 0.75, 0.5, 1])) // Top right
+  viewports.push(createViewport(renderWindow, rootContainer, [0, 0.5, 0.25, 0.75])) // Bottom left
+  viewports.push(createViewport(renderWindow, rootContainer, [0.25, 0.5, 0.5, 0.75])) // Bottom right
 
   // Restore original position style
   rootContainer.style.position = originalPosition
@@ -143,15 +112,11 @@ export function createMPRViewports(
  * Creates viewports for CPR (Curved Planar Reformation)
  * @param renderWindow - The VTK render window
  * @param rootContainer - The root container element
- * @param interactor - The VTK interactor
- * @param imageInteractorStyle - The image interactor style
  * @returns Array of viewport objects - [main CPR view, cross-section view]
  */
 export function createCPRViewports(
   renderWindow: vtkRenderWindow,
   rootContainer: HTMLElement,
-  interactor: vtkRenderWindowInteractor,
-  imageInteractorStyle: vtkInteractorStyleImage,
 ): Viewport[] {
   const viewports: Viewport[] = []
 
@@ -160,14 +125,9 @@ export function createCPRViewports(
   rootContainer.style.position = 'relative'
 
   // Create main CPR view (top 70%)
-  viewports.push(
-    createViewport(renderWindow, rootContainer, [0, 0, 1, 1], interactor, imageInteractorStyle),
-  )
-
+  viewports.push(createViewport(renderWindow, rootContainer, [0, 0, 0.5, 0.5]))
   // Create cross-section view (bottom 30%)
-  viewports.push(
-    createViewport(renderWindow, rootContainer, [0.7, 0, 1, 0.3], interactor, imageInteractorStyle),
-  )
+  viewports.push(createViewport(renderWindow, rootContainer, [0.35, 0, 0.5, 0.2]))
 
   // Restore original position style
   rootContainer.style.position = originalPosition
@@ -189,7 +149,7 @@ export function cleanupViewport(
   const interactorContainer = interactor.getContainer()
   // If the viewport has interactor-related references, unbind events
   if (viewport.container && interactorContainer) {
-    if (interactorContainer !== viewport.container) {
+    if (interactorContainer === viewport.container) {
       interactor.unbindEvents()
     }
   }
